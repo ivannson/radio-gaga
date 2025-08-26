@@ -17,6 +17,9 @@
 #include "Audio_Manager.h"
 #include "RFID_Manager.h"
 #include "Battery_Manager.h"
+#include "SetupMode.h"
+#include "SdScanner.h"
+#include "MappingStore.h"
 
 // ============================================================================
 // PIN DEFINITIONS
@@ -57,6 +60,11 @@ Rotary_Manager rotaryManager(ROTARY_CLK_PIN, ROTARY_DT_PIN, -1);  // clk_pin, dt
 Settings_Manager settingsManager("/settings.json");  // settings file path
 RFID_Manager rfidManager(SPI_SCLK, SPI_MISO, SPI_MOSI, SPI_SS);  // sclk, miso, mosi, ss
 Battery_Manager batteryManager; // Battery manager instance
+
+// Setup mode components
+SdScanner sdScanner;
+MappingStore mappingStore;
+SetupMode setupMode;
 
 // ============================================================================
 // AUDIO MANAGER CONFIGURATION
@@ -198,83 +206,77 @@ bool dacInitialized = false;
 void handleButtonPress(ButtonType buttonType) {
   Serial.printf("handleButtonPress called with button: %d\n", buttonType);
   Serial.printf("Audio Manager initialized: %s\n", audioManager.isInitialized() ? "Yes" : "No");
-  
-  // Check if RFID tag is present - buttons only work with tag
-  if (!rfidManager.isTagPresent()) {
-    Serial.println("No RFID tag present - buttons disabled");
+
+  // Only require a tag for transport controls, never for the encoder button
+  auto requiresTag = [](ButtonType b) {
+    return b == BUTTON_PREVIOUS || b == BUTTON_NEXT || b == BUTTON_PLAY_PAUSE;
+  };
+
+  const bool tagPresent = rfidManager.isTagPresent();
+
+  if (requiresTag(buttonType) && !tagPresent) {
+    Serial.println("No RFID tag present - transport buttons disabled");
     return;
   }
-  
-  Serial.printf("RFID tag present: %s - buttons enabled\n", rfidManager.getLastDetectedUIDString().c_str());
-  
+
+  if (tagPresent) {
+    Serial.printf("RFID tag present: %s - buttons enabled\n",
+                  rfidManager.getLastDetectedUIDString().c_str());
+  }
+
   switch (buttonType) {
     case BUTTON_PREVIOUS:
       Serial.println("Previous button pressed - going to previous track");
       if (audioManager.isInitialized()) {
-        Serial.println("Audio Manager is initialized, calling playPreviousFile...");
-        if (audioManager.playPreviousFile()) {
-          Serial.println("Previous track started successfully");
-        } else {
+        if (!audioManager.playPreviousFile()) {
           Serial.printf("Failed to play previous track: %s\n", audioManager.getLastError());
         }
       } else {
         Serial.println("Audio Manager not initialized, cannot play previous track");
       }
       break;
-      
+
     case BUTTON_PLAY_PAUSE:
       Serial.println("Play/Pause button pressed - toggling playback");
       if (audioManager.isInitialized()) {
-        // Update playback state before checking
         audioManager.updatePlaybackState();
-        
-        Serial.printf("Audio Manager is initialized, current playing state: %s\n", 
-                     audioManager.isPlaying() ? "Playing" : "Stopped");
         if (audioManager.isPlaying()) {
-          Serial.println("Currently playing, attempting to pause...");
-          if (audioManager.pausePlayback()) {
-            Serial.println("Playback paused");
-          } else {
-            Serial.printf("Failed to pause playback: %s\n", audioManager.getLastError());
+          if (!audioManager.pausePlayback()) {
+            Serial.printf("Failed to pause: %s\n", audioManager.getLastError());
           }
         } else {
-          Serial.println("Currently stopped, attempting to resume...");
-          if (audioManager.resumePlayback()) {
-            Serial.println("Playback resumed");
-          } else {
-            Serial.printf("Failed to resume playback: %s\n", audioManager.getLastError());
+          if (!audioManager.resumePlayback()) {
+            Serial.printf("Failed to resume: %s\n", audioManager.getLastError());
           }
         }
       } else {
         Serial.println("Audio Manager not initialized, cannot toggle playback");
       }
       break;
-      
+
     case BUTTON_NEXT:
       Serial.println("Next button pressed - going to next track");
       if (audioManager.isInitialized()) {
-        Serial.println("Audio Manager is initialized, calling playNextFile...");
-        if (audioManager.playNextFile()) {
-          Serial.println("Next track started successfully");
-        } else {
+        if (!audioManager.playNextFile()) {
           Serial.printf("Failed to play next track: %s\n", audioManager.getLastError());
         }
       } else {
         Serial.println("Audio Manager not initialized, cannot play next track");
       }
       break;
-      
+
     case BUTTON_ENCODER:
-      Serial.println("Encoder button pressed - toggling encoder mode");
-      // You can add encoder mode switching logic here if needed
+      Serial.println("Encoder button pressed - (always active)");
+      // Put your always-available action here:
+      // e.g., toggle setup mode, cycle volume mode, etc.
+      setupMode.enter();  // if this is what you want on encoder press/long-press
       break;
-      
+
     default:
       Serial.printf("Unknown button type: %d\n", buttonType);
       break;
   }
 }
-
 // ============================================================================
 // DEBUG FUNCTIONS
 // ============================================================================
@@ -340,6 +342,32 @@ void listAllSDContents(const char* path, int depth = 0) {
 // ============================================================================
 
 void loop() {
+    // Update button states
+    buttonManager.update();
+    
+    // Update RFID detection (needed for both normal mode and setup mode)
+    static uint32_t lastRFID = 0;
+    if (millis() - lastRFID >= 100) { // 10 Hz max
+        rfidManager.update();
+        lastRFID = millis();
+    }
+    
+    // Always tick setup mode (safe: early-returns unless active)
+    setupMode.loop();
+    
+    // If setup mode is active, skip all normal player logic
+    if (setupMode.isSetupActive()) {
+        return; // Only setup mode runs until it exits
+    }
+    
+    // Enter setup mode on encoder long press release
+    if (buttonManager.getButtonState() == BUTTON_RELEASED_LONG &&
+        buttonManager.getLastButton() == BUTTON_ENCODER) {
+        Serial.println("Encoder long press detected - entering Setup Mode");
+        setupMode.enter(); // Handles disabling RFID control etc.
+        return; // Skip normal player logic this cycle
+    }
+
       // Handle audio playback first
     if (audioManager.isInitialized()) {
         audioManager.update();
@@ -360,7 +388,6 @@ void loop() {
     static bool buttonProcessed = false;
     
     if (millis() - lastBtn >= 2) { // 500 Hz max
-        buttonManager.update();
         
         // Check for button presses and handle them with debouncing
         ButtonType currentButton = buttonManager.getCurrentButton();
@@ -397,13 +424,6 @@ void loop() {
     if (millis() - lastRotary >= 2) { // 500 Hz max
         rotaryManager.update();
         lastRotary = millis();
-    }
-    
-    // Update RFID detection (throttled to prevent interference)
-    static uint32_t lastRFID = 0;
-    if (millis() - lastRFID >= 100) { // 10 Hz max
-        rfidManager.update();
-        lastRFID = millis();
     }
     
     // Update battery monitoring (throttled to prevent interference)
@@ -555,50 +575,83 @@ void setup() {
     // First routing decision using simple GPIO-based headphone detection system
     updateOutputRoute(true);
     
-    // Initialize RFID MFRC522
-    Serial.println("Initializing RFID MFRC522...");
-    if (!rfidManager.begin()) {
-        Serial.println("Failed to initialize RFID Manager!");
-        leds[0] = CRGB::Red;
-        FastLED.show();
-        while(1) delay(1000);
+    // Initialize RFID Manager
+    if (!rfidManager.begin(true)) {  // Enable self-test
+        Serial.println("Failed to initialize RFID Manager");
+        return;
     }
     Serial.println("RFID MFRC522 initialized successfully!");
+
+    // Initialize Setup Mode components
+    if (!sdScanner.begin(SD_MMC)) {
+        Serial.println("Failed to initialize SD Scanner");
+        return;
+    }
+    
+    if (!mappingStore.begin(SD_MMC, "/lookup.ndjson")) {
+        Serial.println("Failed to initialize Mapping Store");
+        return;
+    }
+    
+    if (!setupMode.begin(&mappingStore, &sdScanner, &rfidManager, &buttonManager, "/")) {
+        Serial.println("Failed to initialize Setup Mode");
+        return;
+    }
+    Serial.println("Setup Mode components initialized successfully!");
     Serial.println("Scan an RFID card to see the UID!");
     
     // Set up RFID audio control callback
     rfidManager.setAudioControlCallback([](const char* uid, bool tagPresent, bool isNewTag, bool isSameTag) {
+        // Suppress audio control during setup mode
+        if (setupMode.isSetupActive()) {
+            Serial.println("[RFID-AUDIO] Setup mode active - audio control suppressed");
+            return;
+        }
+        
         if (tagPresent) {
             if (isNewTag) {
-                // New tag detected - start playback from beginning
-                Serial.printf("[RFID-AUDIO] New tag detected: %s - Starting audio playback\n", uid);
+                Serial.printf("[RFID-AUDIO] New tag detected: %s - Looking up music folder\n", uid);
                 
-                // Change audio source to /test_music (as requested for testing)
-                if (audioManager.changeAudioSource("/test_music")) {
-                    Serial.println("[RFID-AUDIO] Audio source changed to /test_music");
+                // Look up the music folder path for this UID
+                String musicPath;
+                if (mappingStore.getPathFor(uid, musicPath)) {
+                    Serial.printf("[RFID-AUDIO] Found mapping: %s -> %s\n", uid, musicPath.c_str());
                     
-                    // Start playing from the first file
-                    if (audioManager.restartFromFirstFile()) {
-                        Serial.println("[RFID-AUDIO] Audio started successfully");
+                    // Change audio source to the mapped folder
+                    if (audioManager.changeAudioSource(musicPath.c_str())) {
+                        Serial.printf("[RFID-AUDIO] Audio source changed to %s\n", musicPath.c_str());
+                        if (audioManager.restartFromFirstFile()) {
+                            Serial.println("[RFID-AUDIO] Audio started successfully");
+                        } else {
+                            Serial.printf("[RFID-AUDIO] Failed to start audio: %s\n", audioManager.getLastError());
+                        }
                     } else {
-                        Serial.printf("[RFID-AUDIO] Failed to start audio: %s\n", audioManager.getLastError());
+                        Serial.printf("[RFID-AUDIO] Failed to change audio source to %s: %s\n", musicPath.c_str(), audioManager.getLastError());
                     }
                 } else {
-                    Serial.printf("[RFID-AUDIO] Failed to change audio source: %s\n", audioManager.getLastError());
+                    Serial.printf("[RFID-AUDIO] No mapping found for UID: %s - using default folder\n", uid);
+                    
+                    // Fallback to default folder if no mapping found
+                    if (audioManager.changeAudioSource("/test_music")) {
+                        Serial.println("[RFID-AUDIO] Audio source changed to default /test_music");
+                        if (audioManager.restartFromFirstFile()) {
+                            Serial.println("[RFID-AUDIO] Audio started successfully");
+                        } else {
+                            Serial.printf("[RFID-AUDIO] Failed to start audio: %s\n", audioManager.getLastError());
+                        }
+                    } else {
+                        Serial.printf("[RFID-AUDIO] Failed to change audio source to default: %s\n", audioManager.getLastError());
+                    }
                 }
             } else if (isSameTag) {
-                // Same tag re-inserted - resume playback (acts as play/pause button)
                 Serial.printf("[RFID-AUDIO] Same tag re-inserted: %s - Toggling audio playback\n", uid);
-                
                 if (audioManager.isPlaying()) {
-                    // If playing, pause
                     if (audioManager.pausePlayback()) {
                         Serial.println("[RFID-AUDIO] Audio paused");
                     } else {
                         Serial.printf("[RFID-AUDIO] Failed to pause audio: %s\n", audioManager.getLastError());
                     }
                 } else {
-                    // If paused/stopped, resume
                     if (audioManager.resumePlayback()) {
                         Serial.println("[RFID-AUDIO] Audio resumed");
                     } else {
@@ -607,9 +660,7 @@ void setup() {
                 }
             }
         } else {
-            // Tag removed - pause audio
             Serial.println("[RFID-AUDIO] Tag removed - Pausing audio playback");
-            
             if (audioManager.isPlaying()) {
                 if (audioManager.pausePlayback()) {
                     Serial.println("[RFID-AUDIO] Audio paused due to tag removal");

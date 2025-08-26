@@ -50,6 +50,7 @@ public:
     
     // Initialization
     bool begin();
+    bool begin(bool enableSelfTest = true);  // Optional self-test
     bool isInitialized() const { return initialized; }
     
     // Main update function - call this in main loop

@@ -20,6 +20,11 @@ RFID_Manager::RFID_Manager(uint8_t sclk, uint8_t miso, uint8_t mosi, uint8_t ss)
 
 // Initialize RFID system
 bool RFID_Manager::begin() {
+    return begin(true); // Default to self-test enabled
+}
+
+// Initialize RFID system with optional self-test
+bool RFID_Manager::begin(bool enableSelfTest) {
     if (initialized) {
         Serial.println("RFID_Manager: Already initialized");
         return true;
@@ -35,10 +40,17 @@ bool RFID_Manager::begin() {
     // Initialize MFRC522
     mfrc522.PCD_Init();
     
-    // Check if MFRC522 is responding
-    if (!mfrc522.PCD_PerformSelfTest()) {
-        Serial.println("RFID_Manager: MFRC522 self-test failed!");
-        return false;
+    // Optional self-test
+    if (enableSelfTest) {
+        Serial.println("RFID_Manager: Performing self-test...");
+        if (!mfrc522.PCD_PerformSelfTest()) {
+            Serial.println("RFID_Manager: MFRC522 self-test failed!");
+            Serial.println("RFID_Manager: Continuing without self-test...");
+        } else {
+            Serial.println("RFID_Manager: MFRC522 self-test passed!");
+        }
+    } else {
+        Serial.println("RFID_Manager: Skipping self-test");
     }
     
     Serial.println("RFID MFRC522 initialized successfully!");

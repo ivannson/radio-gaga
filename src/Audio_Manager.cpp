@@ -921,6 +921,12 @@ bool Audio_Manager::changeAudioSource(const char* newFolder) {
     
     Serial.printf("Changing audio source from '%s' to '%s'\n", audioFolder, newFolder);
     
+    // Check if we're already using this folder
+    if (strcmp(audioFolder, newFolder) == 0) {
+        Serial.println("Already using this audio source, no change needed");
+        return true;
+    }
+    
     // Stop current playback
     stopPlayback();
     delay(100); // Give time for cleanup
@@ -941,6 +947,7 @@ bool Audio_Manager::changeAudioSource(const char* newFolder) {
     if (source) {
         delete source;
         source = nullptr;
+        delay(10); // Small delay for cleanup
     }
     
     // Handle root directory (empty string)
@@ -949,19 +956,24 @@ bool Audio_Manager::changeAudioSource(const char* newFolder) {
     try {
         // Create new AudioSourceSDMMC
         source = new AudioSourceSDMMC(sourcePath, fileExtension);
+        if (!source) {
+            setLastError("Failed to create new audio source");
+            return false;
+        }
         Serial.printf("New audio source created for path: %s\n", sourcePath);
         
         // Update the player's source
-        if (player) {
+        if (player && source) {
             // Stop the player first
             player->stop();
             
-            // Create a new player with the new source
-            delete player;
-            player = new AudioPlayer(*source, *volume, *decoder);
-            player->setBufferSize(i2sCfg_.buffer_size);
+            // Use setAudioSource to change the source without recreating the player
+            player->setAudioSource(*source);
             
-            Serial.println("Audio player updated with new source");
+            Serial.println("Audio player source updated successfully");
+        } else {
+            setLastError("Player or source not initialized");
+            return false;
         }
         
         // Relist audio files in the new folder
