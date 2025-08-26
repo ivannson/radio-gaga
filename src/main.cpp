@@ -29,6 +29,8 @@
 #define BRIGHTNESS 50
 #define NUM_LEDS 1
 
+
+
 // SD MMC Pins (1-bit mode)
 #define SD_MMC_CMD 15  // Command line
 #define SD_MMC_CLK 14  // Clock line
@@ -198,6 +200,29 @@ bool sdCardMounted = false;
 
 // DAC status
 bool dacInitialized = false;
+
+// ============================================================================
+// LED FUNCTIONS
+// ============================================================================
+
+// Function to flash red LED 3 times for unknown RFID cards
+void flashRedLED(int times = 3, int flashDuration = 200, int pauseDuration = 150) {
+    for (int i = 0; i < times; i++) {
+        // Flash red
+        leds[0] = CRGB::Red;
+        FastLED.show();
+        delay(flashDuration);
+        
+        // Turn off
+        leds[0] = CRGB::Black;
+        FastLED.show();
+        
+        // Pause between flashes (except after last flash)
+        if (i < times - 1) {
+            delay(pauseDuration);
+        }
+    }
+}
 
 // ============================================================================
 // BUTTON HANDLING FUNCTIONS
@@ -629,19 +654,10 @@ void setup() {
                         Serial.printf("[RFID-AUDIO] Failed to change audio source to %s: %s\n", musicPath.c_str(), audioManager.getLastError());
                     }
                 } else {
-                    Serial.printf("[RFID-AUDIO] No mapping found for UID: %s - using default folder\n", uid);
+                    Serial.printf("[RFID-AUDIO] No mapping found for UID: %s - flashing red LED\n", uid);
                     
-                    // Fallback to default folder if no mapping found
-                    if (audioManager.changeAudioSource("/test_music")) {
-                        Serial.println("[RFID-AUDIO] Audio source changed to default /test_music");
-                        if (audioManager.restartFromFirstFile()) {
-                            Serial.println("[RFID-AUDIO] Audio started successfully");
-                        } else {
-                            Serial.printf("[RFID-AUDIO] Failed to start audio: %s\n", audioManager.getLastError());
-                        }
-                    } else {
-                        Serial.printf("[RFID-AUDIO] Failed to change audio source to default: %s\n", audioManager.getLastError());
-                    }
+                    // Flash red LED 3 times for unknown RFID card
+                    flashRedLED(3, 200, 150);
                 }
             } else if (isSameTag) {
                 Serial.printf("[RFID-AUDIO] Same tag re-inserted: %s - Toggling audio playback\n", uid);
