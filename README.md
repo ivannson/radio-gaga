@@ -4,6 +4,8 @@ I saw Yoto audiobook player for kids which costs over £75 and then you need a s
 
 This ESP32-based audio player system that uses RFID cards to control music playback from SD card storage. Features include setup mode for RFID-to-folder mapping, headphone detection, volume control, and comprehensive logging.
 
+✨ Check out the [build progress on Instagram](https://www.instagram.com/nvkv.makes/) and stay tuned for the full build video [coming soon on YouTube](https://www.youtube.com/@Nvkvmakes)! 🎥
+
 ## 🎵 Features
 
 ### Core Functionality
