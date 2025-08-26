@@ -1,4 +1,5 @@
 #include "Settings_Manager.h"
+#include "Logger.h"
 #include <SD_MMC.h>
 
 // Define static constexpr members
@@ -21,8 +22,8 @@ Settings_Manager::Settings_Manager(const char* file_path)
 
 // Initialize settings manager
 bool Settings_Manager::begin(void* fs) {
-    Serial.println("Initializing Settings Manager...");
-    Serial.printf("Settings file: %s\n", settingsFilePath);
+    LOG_SETTINGS_INFO("Initializing Settings Manager...");
+    LOG_SETTINGS_DEBUG("Settings file: %s", settingsFilePath);
     
     // Check if settings file exists
     fileExists = SD_MMC.exists(settingsFilePath);

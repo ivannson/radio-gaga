@@ -1,4 +1,5 @@
 #include "RFID_Manager.h"
+#include "Logger.h"
 
 // Constructor
 RFID_Manager::RFID_Manager(uint8_t sclk, uint8_t miso, uint8_t mosi, uint8_t ss) 
@@ -26,13 +27,13 @@ bool RFID_Manager::begin() {
 // Initialize RFID system with optional self-test
 bool RFID_Manager::begin(bool enableSelfTest) {
     if (initialized) {
-        Serial.println("RFID_Manager: Already initialized");
+        LOG_RFID_INFO("Already initialized");
         return true;
     }
     
-    Serial.println("Initializing RFID MFRC522...");
-    Serial.printf("RFID_Manager: SPI pins - SCLK:%d, MISO:%d, MOSI:%d, SS:%d\n", 
-                  sclk_pin, miso_pin, mosi_pin, ss_pin);
+    LOG_RFID_INFO("Initializing RFID MFRC522...");
+    LOG_RFID_DEBUG("SPI pins - SCLK:%d, MISO:%d, MOSI:%d, SS:%d", 
+                   sclk_pin, miso_pin, mosi_pin, ss_pin);
     
     // Initialize SPI for RFID
     SPI.begin(sclk_pin, miso_pin, mosi_pin, ss_pin);
@@ -42,19 +43,19 @@ bool RFID_Manager::begin(bool enableSelfTest) {
     
     // Optional self-test
     if (enableSelfTest) {
-        Serial.println("RFID_Manager: Performing self-test...");
+        LOG_RFID_INFO("Performing self-test...");
         if (!mfrc522.PCD_PerformSelfTest()) {
-            Serial.println("RFID_Manager: MFRC522 self-test failed!");
-            Serial.println("RFID_Manager: Continuing without self-test...");
+            LOG_RFID_WARN("MFRC522 self-test failed!");
+            LOG_RFID_WARN("Continuing without self-test...");
         } else {
-            Serial.println("RFID_Manager: MFRC522 self-test passed!");
+            LOG_RFID_INFO("MFRC522 self-test passed!");
         }
     } else {
-        Serial.println("RFID_Manager: Skipping self-test");
+        LOG_RFID_INFO("Skipping self-test");
     }
     
-    Serial.println("RFID MFRC522 initialized successfully!");
-    Serial.println("Scan an RFID card to see the UID!");
+    LOG_RFID_INFO("RFID MFRC522 initialized successfully!");
+    LOG_RFID_INFO("Scan an RFID card to see the UID!");
     
     initialized = true;
     return true;

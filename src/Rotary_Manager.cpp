@@ -1,4 +1,5 @@
 #include "Rotary_Manager.h"
+#include "Logger.h"
 #include "AiEsp32RotaryEncoder.h"
 
 // Static instance for ISR access
@@ -37,7 +38,7 @@ bool Rotary_Manager::begin() {
     encoder = new AiEsp32RotaryEncoder(clkPin, dtPin, buttonPin, vccPin, 4); // 4 steps per detent
     
     if (!encoder) {
-        Serial.println("Failed to create rotary encoder instance!");
+        LOG_ROTARY_ERROR("Failed to create rotary encoder instance!");
         return false;
     }
     

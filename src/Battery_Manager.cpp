@@ -1,4 +1,5 @@
 #include "Battery_Manager.h"
+#include "Logger.h"
 
 // Constructor
 Battery_Manager::Battery_Manager(uint8_t sda, uint8_t scl)
@@ -11,13 +12,13 @@ Battery_Manager::Battery_Manager(uint8_t sda, uint8_t scl)
 bool Battery_Manager::begin() {
     if (initialized) return true;
 
-    Serial.printf("Init Fuel Gauge on SDA:%d SCL:%d\n", sdaPin, sclPin);
+    LOG_BATTERY_INFO("Init Fuel Gauge on SDA:%d SCL:%d", sdaPin, sclPin);
     Wire.begin(sdaPin, sclPin);
     Wire.setClock(100000);
 
     // Make sure we bind to THIS Wire instance
     if (!lipo.begin(Wire)) {
-        Serial.println("MAX1704x not found at 0x36");
+        LOG_BATTERY_ERROR("MAX1704x not found at 0x36");
         return false;
     }
 

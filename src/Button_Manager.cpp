@@ -1,4 +1,5 @@
 #include "Button_Manager.h"
+#include "Logger.h"
 
 // Constructor
 Button_Manager::Button_Manager(uint8_t adc_pin, float encoder_voltage, float previous_voltage, 
@@ -34,14 +35,14 @@ Button_Manager::Button_Manager(uint8_t adc_pin, float encoder_voltage, float pre
 
 // Initialize the button manager
 bool Button_Manager::begin() {
-    Serial.println("Initializing Button Manager...");
-    Serial.printf("ADC Pin: %d\n", adcPin);
-    Serial.printf("Voltage thresholds:\n");
-    Serial.printf("  Encoder: %.2fV\n", encoderButtonVoltage);
-    Serial.printf("  Previous: %.2fV\n", previousButtonVoltage);
-    Serial.printf("  Play/Pause: %.2fV\n", playPauseButtonVoltage);
-    Serial.printf("  Next: %.2fV\n", nextButtonVoltage);
-    Serial.printf("  Tolerance: %.2fV\n", voltageTolerance);
+    LOG_BUTTON_INFO("Initializing Button Manager...");
+    LOG_BUTTON_DEBUG("ADC Pin: %d", adcPin);
+    LOG_BUTTON_DEBUG("Voltage thresholds:");
+    LOG_BUTTON_DEBUG("  Encoder: %.2fV", encoderButtonVoltage);
+    LOG_BUTTON_DEBUG("  Previous: %.2fV", previousButtonVoltage);
+    LOG_BUTTON_DEBUG("  Play/Pause: %.2fV", playPauseButtonVoltage);
+    LOG_BUTTON_DEBUG("  Next: %.2fV", nextButtonVoltage);
+    LOG_BUTTON_DEBUG("  Tolerance: %.2fV", voltageTolerance);
     
     // Configure ADC
     analogReadResolution(adcResolution);

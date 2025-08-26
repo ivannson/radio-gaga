@@ -1,4 +1,5 @@
 #include "DAC_Manager.h"
+#include "Logger.h"
 #include <Wire.h>
 
 // Constructor
@@ -19,12 +20,12 @@ DAC_Manager::DAC_Manager(uint8_t reset_pin, uint8_t sda_pin, uint8_t scl_pin, ui
 
 // Initialize the DAC
 bool DAC_Manager::begin() {
-    Serial.println("Initializing TLV320DAC3100...");
+    LOG_DAC_INFO("Initializing TLV320DAC3100...");
     
     // Initialize I2C first
-    Serial.println("Initializing I2C...");
+    LOG_DAC_INFO("Initializing I2C...");
     Wire.begin(sdaPin, sclPin);
-    Serial.println("I2C initialized");
+    LOG_DAC_INFO("I2C initialized");
     delay(100);
     
     // Reset DAC

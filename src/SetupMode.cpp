@@ -1,4 +1,5 @@
 #include "SetupMode.h"
+#include "Logger.h"
 
 // Constructor
 SetupMode::SetupMode() 
@@ -12,7 +13,7 @@ SetupMode::SetupMode()
 // Initialize setup mode
 bool SetupMode::begin(MappingStore* store, SdScanner* scanner, RFID_Manager* rfid, Button_Manager* buttons, const String& root) {
     if (!store || !scanner || !rfid || !buttons) {
-        Serial.println("SetupMode: Invalid components provided");
+        LOG_SETUP_ERROR("Invalid components provided");
         return false;
     }
     
@@ -22,7 +23,7 @@ bool SetupMode::begin(MappingStore* store, SdScanner* scanner, RFID_Manager* rfi
     buttonManager = buttons;
     contentRoot = root;
     
-    Serial.printf("SetupMode: Initialized with content root: %s\n", contentRoot.c_str());
+    LOG_SETUP_INFO("Initialized with content root: %s", contentRoot.c_str());
     return true;
 }
 
@@ -34,8 +35,8 @@ bool SetupMode::loadContentRootFromSettings(const char* settingsKey) {
     // Try to load from settings (you can integrate with your Settings_Manager here)
     // For now, we'll use a hardcoded default, but this provides the hook for settings integration
     
-    Serial.printf("SetupMode: Content root set to: %s\n", contentRoot.c_str());
-    Serial.println("SetupMode: To customize, implement settings integration or call setContentRoot()");
+    LOG_SETUP_INFO("Content root set to: %s", contentRoot.c_str());
+    LOG_SETUP_INFO("To customize, implement settings integration or call setContentRoot()");
     
     return true;
 }
@@ -47,11 +48,11 @@ bool SetupMode::isInitialized() const {
 // Enter setup mode
 void SetupMode::enter() {
     if (!isInitialized()) {
-        Serial.println("SetupMode: Not initialized, cannot enter");
+        LOG_SETUP_ERROR("Not initialized, cannot enter");
         return;
     }
     
-    Serial.println("\n=== ENTERING SETUP MODE ===");
+    LOG_SETUP_INFO("=== ENTERING SETUP MODE ===");
     isActive = true;
     currentState = SetupState::SETUP_INIT;
     setupStartTime = millis();
@@ -59,7 +60,7 @@ void SetupMode::enter() {
     
     // Disable RFID audio control during setup to prevent playback triggers
     rfidManager->enableAudioControl(false);
-    Serial.println("SetupMode: RFID audio control disabled");
+    LOG_SETUP_INFO("RFID audio control disabled");
     
     // Reset counters
     assignedCount = 0;
@@ -69,7 +70,7 @@ void SetupMode::enter() {
 
 // Exit setup mode
 void SetupMode::exit() {
-    Serial.println("=== EXITING SETUP MODE ===\n");
+    LOG_SETUP_INFO("=== EXITING SETUP MODE ===");
     isActive = false;
     currentState = SetupState::IDLE;
     
@@ -114,25 +115,25 @@ void SetupMode::loop() {
 
 // Initialize setup
 void SetupMode::stepInit() {
-    Serial.println("SetupMode: Initializing setup...");
+    LOG_SETUP_INFO("Initializing setup...");
     
     // Ensure mapping file exists
     if (!mappingStore->isInitialized()) {
-        Serial.println("SetupMode: Mapping store not initialized");
+        LOG_SETUP_ERROR("Mapping store not initialized");
         exit();
         return;
     }
     
     // Load existing mappings
     if (!mappingStore->loadAll()) {
-        Serial.println("SetupMode: Failed to load mappings");
+        LOG_SETUP_ERROR("Failed to load mappings");
         exit();
         return;
     }
     
     // Scan SD directories (non-recursive, one level deep)
     if (!sdScanner->listAudioDirs(SD_MMC, contentRoot, unassignedPaths)) {
-        Serial.println("SetupMode: Failed to scan SD directories");
+        LOG_SETUP_ERROR("Failed to scan SD directories");
         exit();
         return;
     }
@@ -141,12 +142,12 @@ void SetupMode::stepInit() {
     computeUnassignedPaths();
     
     if (unassignedPaths.empty()) {
-        Serial.println("SetupMode: No unassigned directories found");
+        LOG_SETUP_INFO("No unassigned directories found");
         stepSummary();
         return;
     }
     
-    Serial.printf("SetupMode: Found %d unassigned directories\n", unassignedPaths.size());
+    LOG_SETUP_INFO("Found %d unassigned directories", unassignedPaths.size());
     
     // Move to first unassigned directory
     currentState = SetupState::PROMPT_PRESENT_TAG;
@@ -222,12 +223,12 @@ void SetupMode::stepWaitForCardRemoval() {
 
 // Show summary and exit
 void SetupMode::stepSummary() {
-    Serial.println("\n=== SETUP SUMMARY ===");
-    Serial.printf("Directories processed: %d\n", totalProcessed);
-    Serial.printf("Mappings created: %d\n", assignedCount);
-    Serial.printf("Skipped: %d\n", skippedCount);
-    Serial.printf("Already assigned: %d\n", totalProcessed - assignedCount - skippedCount);
-    Serial.println("=====================\n");
+    LOG_SETUP_INFO("=== SETUP SUMMARY ===");
+    LOG_SETUP_INFO("Directories processed: %d", totalProcessed);
+    LOG_SETUP_INFO("Mappings created: %d", assignedCount);
+    LOG_SETUP_INFO("Skipped: %d", skippedCount);
+    LOG_SETUP_INFO("Already assigned: %d", totalProcessed - assignedCount - skippedCount);
+    LOG_SETUP_INFO("=====================");
     
     exit();
 }
@@ -413,12 +414,12 @@ void SetupMode::computeUnassignedPaths() {
 
 // Show prompt message
 void SetupMode::showPrompt(const String& message) {
-    Serial.println("[SETUP] " + message);
+    LOG_SETUP_INFO("%s", message.c_str());
 }
 
 // Show status message
 void SetupMode::showStatus(const String& message) {
-    Serial.println("[SETUP] " + message);
+    LOG_SETUP_INFO("%s", message.c_str());
 }
 
 // Get state name for debugging
@@ -437,9 +438,9 @@ String SetupMode::getCurrentStateName() const {
 
 // Print status for debugging
 void SetupMode::printStatus() const {
-    Serial.printf("SetupMode Status: Active=%s, State=%s, PathIndex=%d/%d\n",
-                  isActive ? "yes" : "no", 
-                  getCurrentStateName().c_str(),
-                  currentPathIndex,
-                  unassignedPaths.size());
+    LOG_SETUP_DEBUG("SetupMode Status: Active=%s, State=%s, PathIndex=%d/%d",
+                    isActive ? "yes" : "no", 
+                    getCurrentStateName().c_str(),
+                    currentPathIndex,
+                    unassignedPaths.size());
 }

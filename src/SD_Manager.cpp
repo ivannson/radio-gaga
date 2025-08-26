@@ -1,4 +1,5 @@
 #include "SD_Manager.h"
+#include "Logger.h"
 #include "driver/gpio.h"
 
 // Constructor
@@ -15,17 +16,17 @@ SD_Manager::SD_Manager(bool one_bit_mode, const char* mount_point) {
 
 // Initialize the SD card
 bool SD_Manager::begin() {
-    Serial.println("Initializing SD card...");
+    LOG_SD_INFO("Initializing SD card...");
     
     // Enable pull-up for the data line we're using (D0)
     if (oneBitMode) {
         gpio_pullup_en(GPIO_NUM_2);   // D0
-        Serial.println("Enabled pull-up for D0 (1-bit mode)");
+        LOG_SD_DEBUG("Enabled pull-up for D0 (1-bit mode)");
     }
     
     // Mount SD card
     if (!SD_MMC.begin(mountPoint, oneBitMode)) {
-        Serial.println("SD card mount failed!");
+        LOG_SD_ERROR("SD card mount failed!");
         return false;
     }
     

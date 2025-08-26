@@ -1,4 +1,5 @@
 #include "MappingStore.h"
+#include "Logger.h"
 
 // Constructor
 MappingStore::MappingStore() 
@@ -10,19 +11,19 @@ bool MappingStore::begin(fs::FS& sd, const char* path) {
     this->sd = &sd;
     if (path) this->filePath = path;
     
-    Serial.printf("MappingStore: Initializing with file: %s\n", this->filePath);
+    LOG_MAPPING_INFO("Initializing with file: %s", this->filePath);
     
     // Try to load existing mappings
     if (!loadAll()) {
-        Serial.println("MappingStore: Failed to load mappings, creating new file");
+        LOG_MAPPING_WARN("Failed to load mappings, creating new file");
         if (!createIfMissing()) {
-            Serial.println("MappingStore: Failed to create mapping file");
+            LOG_MAPPING_ERROR("Failed to create mapping file");
             return false;
         }
     }
     
     initialized = true;
-    Serial.printf("MappingStore: Initialized with %d mappings\n", size());
+    LOG_MAPPING_INFO("Initialized with %d mappings", size());
     return true;
 }
 
