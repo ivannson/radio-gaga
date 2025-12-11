@@ -20,6 +20,8 @@ Button_Manager::Button_Manager(uint8_t adc_pin, float encoder_voltage, float pre
     currentButton = BUTTON_NONE;
     lastButton = BUTTON_NONE;
     buttonState = BUTTON_RELEASED;
+    pressEventRegistered = false;
+    lastDetectedButton = BUTTON_NONE;
     
     // Initialize timing
     lastPressTime = 0;
@@ -59,7 +61,7 @@ void Button_Manager::update() {
     float voltage = getVoltage();
     //Serial.printf("ADC Value: %d, Voltage: %.3fV\n", getRawADC(), voltage);
     
-    // Determine which button is pressed based on voltage
+    // Determine which button is pressed based on voltage (raw reading)
     ButtonType detectedButton = BUTTON_NONE;
     
     if (voltage > 0.1f) {  // Any button pressed (voltage > 0.1V)
@@ -74,47 +76,91 @@ void Button_Manager::update() {
         }
     }
     
-    // Handle button state changes
-    if (detectedButton != currentButton) {
-        // Button state changed
-        if (detectedButton == BUTTON_NONE) {
-            // Button released
-            if (currentTime - lastPressTime > longPressThreshold) {
-                buttonState = BUTTON_RELEASED_LONG;
-            } else {
-                buttonState = BUTTON_RELEASED;
-            }
-            lastReleaseTime = currentTime;
-            lastButton = currentButton;
-            currentButton = BUTTON_NONE;
-            
-            // Print button release
-            if (lastButton != BUTTON_NONE) {
-                Serial.printf("Button released: %s\n", getButtonName(lastButton));
-            }
-        } else {
-            // Button pressed
-            if (currentTime - lastReleaseTime > debounceThreshold) {
-                currentButton = detectedButton;
-                buttonState = BUTTON_PRESSED;
-                lastPressTime = currentTime;
+    // -------------------------------------------------------------------------
+    // Debounce raw reading: require the same detected button for
+    // debounceThreshold milliseconds before treating it as a real change.
+    // This prevents brief analog noise during a long press from generating
+    // extra press/release cycles.
+    // -------------------------------------------------------------------------
+    if (detectedButton != lastDetectedButton) {
+        // Raw reading changed - start (or restart) debounce timer
+        lastDetectedButton = detectedButton;
+        debounceTime = currentTime;
+    }
+    
+    ButtonType stableButton = lastDetectedButton;
+    bool stateChanged = (stableButton != currentButton) &&
+                        (currentTime - debounceTime >= debounceThreshold);
+    
+    // Handle button state changes after debouncing
+    if (stateChanged) {
+        if (stableButton == BUTTON_NONE) {
+            // Button released (debounced)
+            if (currentButton != BUTTON_NONE) {
+                // Calculate press duration before clearing currentButton
+                unsigned long pressDuration = currentTime - lastPressTime;
                 
-                // Print button press
-                Serial.printf("Button pressed: %s (%.2fV)\n", getButtonName(currentButton), voltage);
+                if (pressDuration > longPressThreshold) {
+                    buttonState = BUTTON_RELEASED_LONG;
+                } else {
+                    buttonState = BUTTON_RELEASED;
+                }
+                lastReleaseTime = currentTime;
+                lastButton = currentButton;
+                
+                // Print button release
+                Serial.printf("Button released: %s (held for %lums)\n", 
+                              getButtonName(lastButton), pressDuration);
             }
+            
+            // Reset state for next press
+            currentButton = BUTTON_NONE;
+            pressEventRegistered = false;
+        } else {
+            // Button pressed (new button detected, debounced)
+            currentButton = stableButton;
+            buttonState = BUTTON_PRESSED;
+            lastPressTime = currentTime;
+            pressEventRegistered = false;  // Allow press event to be registered
+            
+            // Print button press
+            Serial.printf("Button pressed: %s (%.2fV)\n", getButtonName(currentButton), voltage);
         }
-    } else if (detectedButton != BUTTON_NONE) {
-        // Button is held
-        if (currentTime - lastPressTime > holdThreshold) {
-            buttonState = BUTTON_HELD;
-            holdTime = currentTime - lastPressTime;
+    } else if (stableButton == currentButton && stableButton != BUTTON_NONE) {
+        // Same button is still being held (stable)
+        unsigned long pressDuration = currentTime - lastPressTime;
+        
+        // Mark press event as registered after debounce time to prevent rapid repeated events
+        // This ensures a long press only registers as a single press event
+        if (!pressEventRegistered && pressDuration > debounceThreshold) {
+            pressEventRegistered = true;
+        }
+        
+        if (pressDuration > holdThreshold) {
+            // Button has been held long enough to transition to HELD state
+            if (buttonState != BUTTON_HELD) {
+                buttonState = BUTTON_HELD;
+            }
+            holdTime = pressDuration;
         }
     }
 }
 
 // Check if specific button is pressed
 bool Button_Manager::isButtonPressed(ButtonType button) const {
-    return (currentButton == button && buttonState == BUTTON_PRESSED);
+    // Only return true if button is pressed AND press event hasn't been registered yet
+    // This prevents multiple press events during a long press
+    return (currentButton == button && 
+            buttonState == BUTTON_PRESSED && 
+            !pressEventRegistered);
+}
+
+// Get current press duration (in milliseconds)
+unsigned long Button_Manager::getPressDuration() const {
+    if (currentButton == BUTTON_NONE) {
+        return 0;
+    }
+    return millis() - lastPressTime;
 }
 
 // Check if specific button is held

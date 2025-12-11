@@ -40,6 +40,12 @@ private:
     ButtonType lastButton;
     ButtonState buttonState;
     
+    // Last raw detected button (before debouncing)
+    ButtonType lastDetectedButton;
+    
+    // Press event tracking - prevents multiple press events during long press
+    bool pressEventRegistered;
+    
     // Timing
     unsigned long lastPressTime;
     unsigned long lastReleaseTime;
@@ -74,6 +80,10 @@ public:
     bool isButtonPressed(ButtonType button) const;
     bool isButtonHeld(ButtonType button) const;
     bool isButtonReleased(ButtonType button) const;
+    
+    // Get current press duration (in milliseconds)
+    // Returns 0 if no button is currently pressed
+    unsigned long getPressDuration() const;
     
     // Get button name as string
     const char* getButtonName(ButtonType button) const;
