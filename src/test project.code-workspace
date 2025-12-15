@@ -1,0 +1,20 @@
+{
+	"folders": [
+		{
+			"path": "../../test project"
+		},
+		{
+			"name": "250725-213152-esp-wrover-kit",
+			"path": "../../250725-213152-esp-wrover-kit"
+		},
+		{
+			"name": "cursor-test",
+			"path": ".."
+		},
+		{
+			"name": "scentient_ble",
+			"path": "../../../../../Desktop/scentient_ble"
+		}
+	],
+	"settings": {}
+}

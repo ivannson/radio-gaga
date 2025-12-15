@@ -37,6 +37,10 @@
 #define SD_MMC_CLK 14  // Clock line
 #define SD_MMC_D0  2   // Data line 0 (only one needed for 1-bit mode)
 
+// External speaker amplifier (PAM8302A) shutdown control
+// SD pin: HIGH = speaker ON, LOW = speaker OFF (shutdown)
+#define SPEAKER_SD_PIN 0
+
 // SPI Pins for RFID MFRC522
 #define SPI_SCLK 18    // SPI Clock line
 #define SPI_MISO 23    // SPI MISO line
@@ -113,9 +117,12 @@ static void applyRoute(bool hp) {
   // Disable speaker when headphones are present, enable when they're not
   bool speakerShouldBeEnabled = !hp;
   LOG_DEBUG("[HP-DET] Speaker should be %s", speakerShouldBeEnabled ? "ENABLED" : "DISABLED");
-  
-  
-  
+
+  // Control external speaker amplifier shutdown (PAM8302A on SPEAKER_SD_PIN)
+  digitalWrite(SPEAKER_SD_PIN, speakerShouldBeEnabled ? HIGH : LOW);
+  LOG_DEBUG("[HP-DET] PAM8302A SD (GPIO%d) set to %s", SPEAKER_SD_PIN,
+            speakerShouldBeEnabled ? "HIGH (ON)" : "LOW (SHUTDOWN)");
+
   // Also set speaker volume to 0 when disabled to ensure it's really off
   if (!speakerShouldBeEnabled) {
     dacManager.setSpeakerVolume(0);
@@ -541,11 +548,13 @@ void setup() {
 
     // Enable internal pull-ups for 4-bit mode pins (from your working script)
     gpio_pullup_en(GPIO_NUM_2);   // DAT0
-    //gpio_pullup_en(GPIO_NUM_4);   // DAT1
-    //gpio_pullup_en(GPIO_NUM_12);  // DAT2 - Now used for headphone detection
-    //gpio_pullup_en(GPIO_NUM_13);  // DAT3
     gpio_pullup_en(GPIO_NUM_15);  // CMD
     gpio_pullup_dis(GPIO_NUM_14);  // CLK
+    
+    // Configure external speaker amplifier SD pin (PAM8302A)
+    pinMode(SPEAKER_SD_PIN, OUTPUT);
+    digitalWrite(SPEAKER_SD_PIN, LOW); // start with speaker amplifier in shutdown to avoid pops
+    LOG_INFO("PAM8302A SD (GPIO%d) configured as OUTPUT, initial state SHUTDOWN (LOW)", SPEAKER_SD_PIN);
     
     // Configure GPIO33 as input for headphone detection
     pinMode(33, INPUT_PULLUP);
@@ -743,6 +752,21 @@ void setup() {
         FastLED.show();
         while(1) delay(1000);
     }
+
+    // Determine initial volume from settings (or fallback) and
+    // apply it directly to the Audio Manager so it is effective
+    // even before any encoder movement.
+    float initialVolume = 0.35f; // Fallback default
+    if (settingsManager.isSettingsLoaded()) {
+        initialVolume = settingsManager.getDefaultVolume();
+        LOG_INFO("Initial volume loaded from settings: %.2f", initialVolume);
+    } else {
+        LOG_INFO("Settings not loaded, using fallback initial volume: %.2f", initialVolume);
+    }
+
+    // Apply initial volume directly to the audio pipeline
+    audioManager.setVolume(initialVolume);
+    LOG_INFO("Audio Manager volume set to initial value: %.2f", initialVolume);
     
     // Initialize Rotary Encoder
     LOG_INFO("Initializing Rotary Encoder...");
@@ -753,27 +777,20 @@ void setup() {
         while(1) delay(1000);
     }
     
-    // Set initial volume from settings
-    if (settingsManager.isSettingsLoaded()) {
-        float defaultVolume = settingsManager.getDefaultVolume();
-        rotaryManager.setVolume(defaultVolume);
-        LOG_INFO("Volume set from settings: %.2f", defaultVolume);
-    } else {
-        // Fallback to default if settings not loaded
-        float defaultVolume = 0.35f; // 35% (matching LOCKED_VOLUME from working script)
-        rotaryManager.setVolume(defaultVolume);
-        LOG_INFO("Volume set to fallback default: %.2f", defaultVolume);
-    }
-    
-    // Enable conservative mode to prevent encoder skipping
-    rotaryManager.setConservativeMode(true);
-    
     // Set up volume control callback to sync with audio manager
     rotaryManager.setVolumeChangeCallback([](float newVolume) {
         // Update audio manager volume
         audioManager.setVolume(newVolume);
         LOG_DEBUG("Volume changed to: %.2f (synced with audio)", newVolume);
     });
+    
+    // Sync rotary encoder position and internal volume with the
+    // already-applied initial volume.
+    rotaryManager.setVolume(initialVolume);
+    LOG_INFO("Rotary encoder volume initialized to: %.2f", initialVolume);
+    
+    // Enable conservative mode to prevent encoder skipping
+    rotaryManager.setConservativeMode(true);
     
     LOG_INFO("Setup complete! Ready to play audio.");
     

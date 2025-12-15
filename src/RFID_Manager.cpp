@@ -40,6 +40,13 @@ bool RFID_Manager::begin(bool enableSelfTest) {
     
     // Initialize MFRC522
     mfrc522.PCD_Init();
+    byte ver = mfrc522.PCD_ReadRegister(MFRC522::VersionReg);
+    Serial.print("[RFID] VersionReg: 0x");
+    Serial.println(ver, HEX);
+
+    if (ver == 0x00 || ver == 0xFF) {
+        Serial.println("[RFID] VersionReg indicates no SPI communication (0x00 or 0xFF)");
+    }
     
     // Optional self-test
     if (enableSelfTest) {
