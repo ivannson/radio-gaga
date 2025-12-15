@@ -17,9 +17,9 @@
 #include "Audio_Manager.h"
 #include "RFID_Manager.h"
 #include "Battery_Manager.h"
-#include "SetupMode.h"
 #include "SdScanner.h"
 #include "MappingStore.h"
+#include "WebSetupServer.h"
 #include "Logger.h"
 
 // ============================================================================
@@ -68,10 +68,10 @@ Settings_Manager settingsManager("/settings.json");  // settings file path
 RFID_Manager rfidManager(SPI_SCLK, SPI_MISO, SPI_MOSI, SPI_SS);  // sclk, miso, mosi, ss
 Battery_Manager batteryManager; // Battery manager instance
 
-// Setup mode components
+// Setup components
 SdScanner sdScanner;
 MappingStore mappingStore;
-SetupMode setupMode;
+WebSetupServer webSetupServer;
 
 // ============================================================================
 // AUDIO MANAGER CONFIGURATION
@@ -300,9 +300,7 @@ void handleButtonPress(ButtonType buttonType) {
 
     case BUTTON_ENCODER:
       LOG_INFO("Encoder button pressed - (always active)");
-      // Put your always-available action here:
-      // e.g., toggle setup mode, cycle volume mode, etc.
-      setupMode.enter();  // if this is what you want on encoder press/long-press
+      // No action bound; web setup is triggered via long-press in loop
       break;
 
     default:
@@ -384,20 +382,20 @@ void loop() {
         rfidManager.update();
         lastRFID = millis();
     }
-    
-    // Always tick setup mode (safe: early-returns unless active)
-    setupMode.loop();
-    
-    // If setup mode is active, skip all normal player logic
-    if (setupMode.isSetupActive()) {
-        return; // Only setup mode runs until it exits
+
+    // If web setup is active, serve HTTP and skip normal player logic
+    if (webSetupServer.isActive()) {
+        webSetupServer.loop();
+        return;
     }
     
     // Enter setup mode on encoder long press release
     if (buttonManager.getButtonState() == BUTTON_RELEASED_LONG &&
         buttonManager.getLastButton() == BUTTON_ENCODER) {
-        LOG_INFO("Encoder long press detected - entering Setup Mode");
-        setupMode.enter(); // Handles disabling RFID control etc.
+        LOG_INFO("Encoder long press detected - starting Web Setup server");
+        if (!webSetupServer.start()) {
+            LOG_ERROR("Failed to start Web Setup server");
+        }
         return; // Skip normal player logic this cycle
     }
 
@@ -620,7 +618,7 @@ void setup() {
     }
     LOG_INFO("RFID MFRC522 initialized successfully!");
 
-    // Initialize Setup Mode components
+    // Initialize storage components for mapping
     if (!sdScanner.begin(SD_MMC)) {
         LOG_ERROR("Failed to initialize SD Scanner");
         return;
@@ -631,18 +629,17 @@ void setup() {
         return;
     }
     
-    if (!setupMode.begin(&mappingStore, &sdScanner, &rfidManager, &buttonManager, "/")) {
-        LOG_ERROR("Failed to initialize Setup Mode");
-        return;
+    // Initialize Web Setup server (open AP, starts on-demand)
+    if (!webSetupServer.begin(&mappingStore, &sdScanner, &rfidManager, "/")) {
+        LOG_ERROR("Failed to initialize Web Setup server");
     }
-    LOG_INFO("Setup Mode components initialized successfully!");
     LOG_INFO("Scan an RFID card to see the UID!");
     
     // Set up RFID audio control callback
     rfidManager.setAudioControlCallback([](const char* uid, bool tagPresent, bool isNewTag, bool isSameTag) {
-        // Suppress audio control during setup mode
-        if (setupMode.isSetupActive()) {
-            LOG_DEBUG("[RFID-AUDIO] Setup mode active - audio control suppressed");
+        // Suppress audio control during web setup
+        if (webSetupServer.isActive()) {
+            LOG_DEBUG("[RFID-AUDIO] Web setup active - audio control suppressed");
             return;
         }
         
