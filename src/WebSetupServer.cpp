@@ -3,8 +3,163 @@
 
 static const char* kApSsid = "setup";   // open network as requested
 
-// Minified single-page UI to reduce flash size
-static const char* kIndexHtml PROGMEM = R"HTML(<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Setup</title><style>body{font-family:Arial;margin:12px;background:#f6f6f6}h1{font-size:18px}button{padding:8px 12px;margin:4px}.folder{padding:8px;background:#fff;margin:6px 0;border:1px solid #ddd;cursor:pointer}.status{margin:10px 0}.hidden{display:none}#modal{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center}#modalContent{background:#fff;padding:12px;border-radius:4px;max-width:320px}</style></head><body><h1>Setup</h1><div id=folders></div><div class=status id=status></div><div id=actions class=hidden><button id=doneBtn>Done</button></div><div id=modal><div id=modalContent><div id=modalText></div><div style=margin-top:10px><button id=reassignBtn>Reassign</button><button id=cancelBtn>Cancel</button></div></div></div><script>let t=null,f="",u="";const S=e=>document.getElementById("status").innerText=e,A=e=>document.getElementById("actions").classList.toggle("hidden",!e),M=e=>{document.getElementById("modalText").innerText=e,document.getElementById("modal").style.display="flex"},C=()=>document.getElementById("modal").style.display="none";async function L(){const e=await fetch("/folders"),n=await e.json(),d=document.getElementById("folders");if(d.innerHTML="",!n.folders||!n.folders.length)return d.innerHTML="<div>No unassigned folders found.</div>",A(!0);n.folders.forEach(e=>{const n=document.createElement("div");n.className="folder",n.innerText=e,n.onclick=()=>E(e),d.appendChild(n)})}async function E(e){await fetch("/select",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:"folder="+encodeURIComponent(e)}),f=e,S("Waiting for tag for "+e+"..."),A(!1),g()}function g(){t&&clearInterval(t),t=setInterval(T,600)}async function T(){const e=await fetch("/tag"),n=await e.json();"tag_detected"===n.status&&(u=n.uid,clearInterval(t),S("Tag "+u+" detected, assigning..."),y(!1))}async function y(e){const n=`uid=${encodeURIComponent(u)}&folder=${encodeURIComponent(f)}&force=${e?"1":"0"}`,d=await fetch("/assign",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:n}),o=await d.json();"assigned"===o.status||"already_assigned_same"===o.status?(S("Assigned to "+f+"."),A(!0)):"conflict"===o.status?M("This cassette is already assigned to "+o.folder+". Reassign?"):(S("Error: "+(o.message||"unknown")),A(!0))}document.getElementById("reassignBtn").onclick=async()=>{C();const e=`uid=${encodeURIComponent(u)}&folder=${encodeURIComponent(f)}`,n=await fetch("/reassign",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:e}),d=await n.json();"reassigned"===d.status?S("Reassigned to "+f+"."):S("Reassign failed: "+(d.message||"unknown")),A(!0)},document.getElementById("cancelBtn").onclick=async()=>{C(),S("Choose another folder."),u="",await L()},document.getElementById("doneBtn").onclick=async()=>{await fetch("/done",{method:"POST"}),S("Done. You can close this page.")},L();</script></body></html>)HTML";
+// Single-page UI with vibrant Game Boy Color-inspired palette
+static const char* kIndexHtml PROGMEM = R"HTML(
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Radio Gaga Setup</title>
+<style>
+:root {
+  --bg1: #0b122c;
+  --bg2: #193e7a;
+  --card: rgba(8, 12, 28, 0.9);
+  --stroke: rgba(255, 255, 255, 0.12);
+  --text: #f6f8ff;
+  --muted: #c2cffc;
+  --primary: #1ee7ff;
+  --primary-dark: #0aa0ff;
+  --accent: #7aff59;
+  --accent-2: #ff7af5;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  background:
+    radial-gradient(1200px at 12% 18%, rgba(255,122,245,0.12), transparent 55%),
+    radial-gradient(900px at 88% 10%, rgba(122,255,89,0.10), transparent 52%),
+    linear-gradient(135deg, var(--bg1), var(--bg2));
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+}
+.wrap { width: 100%; max-width: 480px; padding: 18px 16px 28px; }
+.header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.logo {
+  width: 42px; height: 42px; border-radius: 12px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; color: #0a1633;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.28), 0 0 0 2px rgba(10,16,35,0.6);
+}
+h1 { margin: 0; font-size: 19px; letter-spacing: .2px; }
+.badge {
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  color: #081025;
+  padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 800;
+  box-shadow: 0 6px 12px rgba(0,0,0,0.18);
+}
+.card { background: var(--card); border: 1px solid var(--stroke); border-radius: 14px; padding: 14px; box-shadow: 0 12px 28px rgba(0,0,0,.25); backdrop-filter: blur(6px); margin-bottom: 14px; }
+.label { font-size: 13px; color: var(--muted); margin: 0 0 6px; }
+.folder { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px; border-radius: 12px; border: 1px solid var(--stroke); background: rgba(255,255,255,.05); color: var(--text); margin-bottom: 10px; cursor: pointer; transition: transform .08s ease, box-shadow .12s ease, border-color .12s ease; border-left: 4px solid var(--accent); }
+.folder:hover { transform: translateY(-2px); box-shadow: 0 10px 18px rgba(0,0,0,.25); border-color: rgba(122,255,89,0.5); }
+.folder-title { font-weight: 800; font-size: 15px; line-height: 1.2; letter-spacing: .2px; }
+.folder-arrow { color: var(--muted); font-size: 14px; }
+.status { font-size: 14px; line-height: 1.4; color: var(--text); padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,.06); border: 1px solid var(--stroke); min-height: 42px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.03); }
+.actions { display: flex; gap: 10px; margin-top: 10px; }
+button { border: none; border-radius: 10px; padding: 12px 14px; font-size: 15px; font-weight: 800; cursor: pointer; transition: transform .08s ease, box-shadow .12s ease; width: 100%; letter-spacing: .2px; }
+button:active { transform: translateY(1px); }
+.btn-primary { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: #001429; box-shadow: 0 10px 20px rgba(10,160,255,.35); }
+.btn-ghost { background: rgba(255,255,255,.1); color: var(--text); border: 1px solid var(--stroke); }
+.hidden { display: none; }
+#modal { position: fixed; inset: 0; background: rgba(5,10,24,.7); display: none; align-items: center; justify-content: center; padding: 16px; }
+#modalContent { background: var(--card); border: 1px solid var(--stroke); border-radius: 14px; padding: 16px; max-width: 360px; width: 100%; box-shadow: 0 16px 30px rgba(0,0,0,.35); }
+#modalText { font-size: 15px; color: var(--text); margin-bottom: 12px; }
+#modalActions { display: flex; gap: 10px; }
+@media (max-width: 480px) {
+  .wrap { padding: 16px 12px 24px; }
+  .folder { padding: 12px 10px; }
+  button { font-size: 14px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div class="logo">RG</div>
+    <div>
+      <div class="badge">Radio Gaga Setup</div>
+      <h1>Choose folder & tag</h1>
+    </div>
+  </div>
+  <div class="card">
+    <div class="label">Folders</div>
+    <div id="folders"></div>
+  </div>
+  <div class="card">
+    <div class="label">Status</div>
+    <div class="status" id="status">Pick a folder to begin.</div>
+    <div class="actions hidden" id="actions">
+      <button class="btn-primary" id="doneBtn">Done</button>
+    </div>
+  </div>
+</div>
+<div id="modal">
+  <div id="modalContent">
+    <div id="modalText"></div>
+    <div id="modalActions">
+      <button class="btn-primary" id="reassignBtn">Reassign</button>
+      <button class="btn-ghost" id="cancelBtn">Cancel</button>
+    </div>
+  </div>
+</div>
+<script>
+let t=null,f="",u="";
+const S=e=>document.getElementById("status").innerText=e,
+      A=e=>document.getElementById("actions").classList.toggle("hidden",!e),
+      M=e=>{document.getElementById("modalText").innerText=e;document.getElementById("modal").style.display="flex"},
+      C=()=>document.getElementById("modal").style.display="none";
+async function L(){
+  const e=await fetch("/folders"),n=await e.json(),d=document.getElementById("folders");
+  if(d.innerHTML="",!n.folders||!n.folders.length){d.innerHTML='<div class="status">No unassigned folders found.</div>';A(!0);return;}
+  n.folders.forEach(e=>{
+    const n=document.createElement("div");
+    n.className="folder";
+    n.innerHTML='<span class="folder-title">'+e+'</span><span class="folder-arrow">›</span>';
+    n.onclick=()=>E(e);
+    d.appendChild(n);
+  });
+}
+async function E(e){
+  await fetch("/select",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:"folder="+encodeURIComponent(e)});
+  f=e;S("Waiting for tag for "+e+"...");A(!1);g();
+}
+function g(){t&&clearInterval(t);t=setInterval(T,600);}
+async function T(){
+  const e=await fetch("/tag"),n=await e.json();
+  if("tag_detected"===n.status){u=n.uid;clearInterval(t);S("Tag "+u+" detected, assigning...");y(!1);}
+}
+async function y(e){
+  const n=`uid=${encodeURIComponent(u)}&folder=${encodeURIComponent(f)}&force=${e?"1":"0"}`,
+        d=await fetch("/assign",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:n}),
+        o=await d.json();
+  if("assigned"===o.status||"already_assigned_same"===o.status){S("Assigned to "+f+".");A(!0);}
+  else if("conflict"===o.status){M("This cassette is already assigned to "+o.folder+". Reassign?");}
+  else {S("Error: "+(o.message||"unknown"));A(!0);}
+}
+document.getElementById("reassignBtn").onclick=async()=>{
+  C();
+  const e=`uid=${encodeURIComponent(u)}&folder=${encodeURIComponent(f)}`,
+        n=await fetch("/reassign",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:e}),
+        d=await n.json();
+  "reassigned"===d.status?S("Reassigned to "+f+"."):S("Reassign failed: "+(d.message||"unknown"));
+  A(!0);
+};
+document.getElementById("cancelBtn").onclick=async()=>{
+  C();S("Choose another folder.");u="";await L();
+};
+document.getElementById("doneBtn").onclick=async()=>{
+  await fetch("/done",{method:"POST"});S("Done. You can close this page.");
+};
+L();
+</script>
+</body>
+</html>
+)HTML";
 
 WebSetupServer::WebSetupServer()
     : server(80),
