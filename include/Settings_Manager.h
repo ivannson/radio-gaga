@@ -8,6 +8,7 @@
 struct Settings {
     // Audio settings
     float defaultVolume;
+    float maxVolume;
     
     // WiFi settings
     char wifiSSID[32];
@@ -20,6 +21,7 @@ struct Settings {
     // Constructor with default values
     Settings() : 
         defaultVolume(0.2f),
+        maxVolume(1.0f),
         sleepTimeout(15),
         batteryCheckInterval(1) {
         // Initialize string arrays
@@ -45,6 +47,7 @@ private:
     
     // Default settings values
     static constexpr float DEFAULT_VOLUME = 0.2f;
+    static constexpr float DEFAULT_MAX_VOLUME = 1.0f;
     static constexpr int DEFAULT_SLEEP_TIMEOUT = 15;
     static constexpr int DEFAULT_BATTERY_INTERVAL = 1;
     static constexpr size_t MAX_JSON_SIZE = 1024;
@@ -68,6 +71,7 @@ public:
     // Get settings
     const Settings& getSettings() const { return currentSettings; }
     float getDefaultVolume() const { return currentSettings.defaultVolume; }
+    float getMaxVolume() const { return currentSettings.maxVolume; }
     const char* getWifiSSID() const { return currentSettings.wifiSSID; }
     const char* getWifiPassword() const { return currentSettings.wifiPassword; }
     int getSleepTimeout() const { return currentSettings.sleepTimeout; }
@@ -75,6 +79,7 @@ public:
     
     // Set settings
     void setDefaultVolume(float volume);
+    void setMaxVolume(float volume);
     void setWifiSSID(const char* ssid);
     void setWifiPassword(const char* password);
     void setSleepTimeout(int minutes);

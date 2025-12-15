@@ -629,12 +629,6 @@ void setup() {
         return;
     }
     
-    // Initialize Web Setup server (open AP, starts on-demand)
-    if (!webSetupServer.begin(&mappingStore, &sdScanner, &rfidManager, "/")) {
-        LOG_ERROR("Failed to initialize Web Setup server");
-    }
-    LOG_INFO("Scan an RFID card to see the UID!");
-    
     // Set up RFID audio control callback
     rfidManager.setAudioControlCallback([](const char* uid, bool tagPresent, bool isNewTag, bool isSameTag) {
         // Suppress audio control during web setup
@@ -749,6 +743,12 @@ void setup() {
         FastLED.show();
         while(1) delay(1000);
     }
+
+    // Initialize Web Setup server (open AP, starts on-demand) after settings/battery are ready
+    if (!webSetupServer.begin(&mappingStore, &sdScanner, &rfidManager, "/", &settingsManager, &batteryManager)) {
+        LOG_ERROR("Failed to initialize Web Setup server");
+    }
+    LOG_INFO("Scan an RFID card to see the UID!");
 
     // Determine initial volume from settings (or fallback) and
     // apply it directly to the Audio Manager so it is effective

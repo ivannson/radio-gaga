@@ -4,6 +4,7 @@
 
 // Define static constexpr members
 constexpr float Settings_Manager::DEFAULT_VOLUME;
+constexpr float Settings_Manager::DEFAULT_MAX_VOLUME;
 constexpr int Settings_Manager::DEFAULT_SLEEP_TIMEOUT;
 constexpr int Settings_Manager::DEFAULT_BATTERY_INTERVAL;
 constexpr size_t Settings_Manager::MAX_JSON_SIZE;
@@ -152,8 +153,18 @@ bool Settings_Manager::createDefaultSettings() {
 
 // Set default volume
 void Settings_Manager::setDefaultVolume(float volume) {
-    currentSettings.defaultVolume = constrain(volume, 0.0f, 1.0f);
+    currentSettings.defaultVolume = constrain(volume, 0.0f, currentSettings.maxVolume);
     Serial.printf("Default volume set to: %.2f\n", currentSettings.defaultVolume);
+}
+
+// Set maximum volume
+void Settings_Manager::setMaxVolume(float volume) {
+    currentSettings.maxVolume = constrain(volume, 0.0f, 1.0f);
+    // Ensure default volume does not exceed max
+    if (currentSettings.defaultVolume > currentSettings.maxVolume) {
+        currentSettings.defaultVolume = currentSettings.maxVolume;
+    }
+    Serial.printf("Max volume set to: %.2f\n", currentSettings.maxVolume);
 }
 
 // Set WiFi SSID
@@ -191,6 +202,9 @@ void Settings_Manager::setBatteryCheckInterval(int minutes) {
 // Update all settings at once
 void Settings_Manager::updateSettings(const Settings& newSettings) {
     currentSettings = newSettings;
+    // Enforce sane volume bounds after bulk update
+    currentSettings.maxVolume = constrain(currentSettings.maxVolume, 0.0f, 1.0f);
+    currentSettings.defaultVolume = constrain(currentSettings.defaultVolume, 0.0f, currentSettings.maxVolume);
     Serial.println("All settings updated");
     printSettings();
 }
@@ -198,7 +212,10 @@ void Settings_Manager::updateSettings(const Settings& newSettings) {
 // Validate settings
 bool Settings_Manager::validateSettings() const {
     // Check volume range
-    if (currentSettings.defaultVolume < 0.0f || currentSettings.defaultVolume > 1.0f) {
+    if (currentSettings.maxVolume < 0.0f || currentSettings.maxVolume > 1.0f) {
+        return false;
+    }
+    if (currentSettings.defaultVolume < 0.0f || currentSettings.defaultVolume > currentSettings.maxVolume) {
         return false;
     }
     
@@ -223,6 +240,7 @@ bool Settings_Manager::validateSettings() const {
 void Settings_Manager::printSettings() const {
     Serial.println("\n=== Current Settings ===");
     Serial.printf("Default Volume: %.2f\n", currentSettings.defaultVolume);
+    Serial.printf("Max Volume: %.2f\n", currentSettings.maxVolume);
     Serial.printf("WiFi SSID: %s\n", currentSettings.wifiSSID[0] ? currentSettings.wifiSSID : "<not set>");
     Serial.printf("WiFi Password: %s\n", currentSettings.wifiPassword[0] ? "***" : "<not set>");
     Serial.printf("Sleep Timeout: %d minutes\n", currentSettings.sleepTimeout);
@@ -323,6 +341,16 @@ bool Settings_Manager::parseJsonDocument(const char* jsonString) {
         currentSettings.defaultVolume = doc["defaultVolume"] | DEFAULT_VOLUME;
     }
     
+    if (doc.containsKey("maxVolume")) {
+        currentSettings.maxVolume = doc["maxVolume"] | DEFAULT_MAX_VOLUME;
+    } else {
+        currentSettings.maxVolume = DEFAULT_MAX_VOLUME;
+    }
+
+    // Clamp volumes and ensure default does not exceed max
+    currentSettings.maxVolume = constrain(currentSettings.maxVolume, 0.0f, 1.0f);
+    currentSettings.defaultVolume = constrain(currentSettings.defaultVolume, 0.0f, currentSettings.maxVolume);
+    
     if (doc.containsKey("wifiSSID")) {
         strcpy(currentSettings.wifiSSID, doc["wifiSSID"] | "");
     }
@@ -347,6 +375,7 @@ bool Settings_Manager::serializeToJson(char* buffer, size_t bufferSize) const {
     StaticJsonDocument<MAX_JSON_SIZE> doc;
     
     doc["defaultVolume"] = currentSettings.defaultVolume;
+    doc["maxVolume"] = currentSettings.maxVolume;
     doc["wifiSSID"] = currentSettings.wifiSSID;
     doc["wifiPassword"] = currentSettings.wifiPassword;
     doc["sleepTimeout"] = currentSettings.sleepTimeout;

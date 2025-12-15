@@ -9,11 +9,14 @@
 #include "SdScanner.h"
 #include "RFID_Manager.h"
 
+class Settings_Manager;
+class Battery_Manager;
+
 class WebSetupServer {
 public:
     WebSetupServer();
 
-    bool begin(MappingStore* store, SdScanner* scanner, RFID_Manager* rfid, const String& contentRoot = "/");
+    bool begin(MappingStore* store, SdScanner* scanner, RFID_Manager* rfid, const String& contentRoot = "/", Settings_Manager* settings = nullptr, Battery_Manager* battery = nullptr);
     bool start();
     void stop();
     void loop();
@@ -31,6 +34,8 @@ private:
     MappingStore* mappingStore;
     SdScanner* sdScanner;
     RFID_Manager* rfidManager;
+    Settings_Manager* settingsManager;
+    Battery_Manager* batteryManager;
 
     std::vector<String> unassignedFolders;
 
@@ -38,12 +43,16 @@ private:
     void registerRoutes();
     void sendJson(int statusCode, const String& body);
     void handleRoot();
+    void handleSettingsPage();
     void handleFolders();
     void handleSelect();
     void handleTag();
     void handleAssign();
     void handleReassign();
     void handleDone();
+    void handleBattery();
+    void handleSettingsJson();
+    void handleSettingsSave();
 
     void refreshFolders();
     bool normalizeUid(String& uid) const;

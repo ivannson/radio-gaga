@@ -1,5 +1,8 @@
 #include "WebSetupServer.h"
 #include "Logger.h"
+#include "Settings_Manager.h"
+#include "Battery_Manager.h"
+#include <ArduinoJson.h>
 
 static const char* kApSsid = "setup";   // open network as requested
 
@@ -47,6 +50,8 @@ body {
   box-shadow: 0 6px 20px rgba(0,0,0,0.28), 0 0 0 2px rgba(10,16,35,0.6);
 }
 h1 { margin: 0; font-size: 19px; letter-spacing: .2px; }
+.topline { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.battery { padding: 8px 10px; border-radius: 10px; border: 1px solid var(--stroke); background: rgba(255,255,255,.06); font-weight: 800; font-size: 13px; color: var(--text); min-width: 86px; text-align: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,.03); }
 .badge {
   background: linear-gradient(135deg, var(--primary), var(--accent));
   color: #081025;
@@ -65,6 +70,7 @@ button { border: none; border-radius: 10px; padding: 12px 14px; font-size: 15px;
 button:active { transform: translateY(1px); }
 .btn-primary { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: #001429; box-shadow: 0 10px 20px rgba(10,160,255,.35); }
 .btn-ghost { background: rgba(255,255,255,.1); color: var(--text); border: 1px solid var(--stroke); }
+.btn-link { background: rgba(255,255,255,.04); color: var(--text); border: 1px solid var(--stroke); box-shadow: 0 8px 16px rgba(0,0,0,.12); }
 .hidden { display: none; }
 #modal { position: fixed; inset: 0; background: rgba(5,10,24,.7); display: none; align-items: center; justify-content: center; padding: 16px; }
 #modalContent { background: var(--card); border: 1px solid var(--stroke); border-radius: 14px; padding: 16px; max-width: 360px; width: 100%; box-shadow: 0 16px 30px rgba(0,0,0,.35); }
@@ -81,9 +87,12 @@ button:active { transform: translateY(1px); }
 <div class="wrap">
   <div class="header">
     <div class="logo">RG</div>
-    <div>
+    <div style="flex:1">
       <div class="badge">Radio Gaga Setup</div>
-      <h1>Choose folder & tag</h1>
+      <div class="topline">
+        <h1>Choose folder & tag</h1>
+        <div class="battery" id="battery">--%</div>
+      </div>
     </div>
   </div>
   <div class="card">
@@ -97,6 +106,7 @@ button:active { transform: translateY(1px); }
       <button class="btn-primary" id="doneBtn">Done</button>
     </div>
   </div>
+  <button class="btn-link" id="settingsBtn">Settings</button>
 </div>
 <div id="modal">
   <div id="modalContent">
@@ -133,6 +143,13 @@ async function T(){
   const e=await fetch("/tag"),n=await e.json();
   if("tag_detected"===n.status){u=n.uid;clearInterval(t);S("Tag "+u+" detected, assigning...");y(!1);}
 }
+async function B(){
+  try{
+    const e=await fetch("/api/battery"),n=await e.json(),d=document.getElementById("battery");
+    if(n.status==="ok"&&typeof n.percentage==="number"){d.innerText=`${n.percentage.toFixed(0)}%`;d.title=n.voltage?`Voltage: ${n.voltage.toFixed(2)}V`:"";}
+    else{d.innerText="N/A";}
+  }catch(e){document.getElementById("battery").innerText="N/A";}
+}
 async function y(e){
   const n=`uid=${encodeURIComponent(u)}&folder=${encodeURIComponent(f)}&force=${e?"1":"0"}`,
         d=await fetch("/assign",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:n}),
@@ -155,7 +172,214 @@ document.getElementById("cancelBtn").onclick=async()=>{
 document.getElementById("doneBtn").onclick=async()=>{
   await fetch("/done",{method:"POST"});S("Done. You can close this page.");
 };
+document.getElementById("settingsBtn").onclick=()=>{window.location.href="/settings";};
 L();
+B();setInterval(B,10000);
+</script>
+</body>
+</html>
+)HTML";
+
+// Settings UI page
+static const char* kSettingsHtml PROGMEM = R"HTML(
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Radio Gaga Settings</title>
+<style>
+:root {
+  --bg1: #0b122c;
+  --bg2: #193e7a;
+  --card: rgba(8, 12, 28, 0.9);
+  --stroke: rgba(255, 255, 255, 0.12);
+  --text: #f6f8ff;
+  --muted: #c2cffc;
+  --primary: #1ee7ff;
+  --primary-dark: #0aa0ff;
+  --accent: #7aff59;
+  --accent-2: #ff7af5;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  background:
+    radial-gradient(1200px at 12% 18%, rgba(255,122,245,0.12), transparent 55%),
+    radial-gradient(900px at 88% 10%, rgba(122,255,89,0.10), transparent 52%),
+    linear-gradient(135deg, var(--bg1), var(--bg2));
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+}
+.wrap { width: 100%; max-width: 520px; padding: 20px 16px 32px; }
+.header { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.logo {
+  width: 44px; height: 44px; border-radius: 12px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; color: #0a1633;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.28), 0 0 0 2px rgba(10,16,35,0.6);
+}
+h1 { margin: 0; font-size: 20px; letter-spacing: .2px; }
+.sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.card { background: var(--card); border: 1px solid var(--stroke); border-radius: 14px; padding: 14px; box-shadow: 0 12px 28px rgba(0,0,0,.25); backdrop-filter: blur(6px); margin-bottom: 14px; }
+.label { font-size: 13px; color: var(--muted); margin: 0 0 6px; font-weight: 700; letter-spacing: .2px; }
+.field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.field input[type="text"],
+.field input[type="password"],
+.field input[type="number"] {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--stroke);
+  background: rgba(255,255,255,.06);
+  color: var(--text);
+  font-size: 14px;
+}
+.slider-row { display: flex; align-items: center; gap: 10px; }
+input[type="range"] { flex: 1; accent-color: var(--primary); }
+.value-pill { min-width: 54px; text-align: center; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--stroke); background: rgba(255,255,255,.06); font-weight: 800; }
+.actions { display: flex; gap: 10px; margin-top: 12px; }
+button { border: none; border-radius: 10px; padding: 12px 14px; font-size: 15px; font-weight: 800; cursor: pointer; transition: transform .08s ease, box-shadow .12s ease; width: 100%; letter-spacing: .2px; }
+button:active { transform: translateY(1px); }
+.btn-primary { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: #001429; box-shadow: 0 10px 20px rgba(10,160,255,.35); }
+.btn-ghost { background: rgba(255,255,255,.1); color: var(--text); border: 1px solid var(--stroke); }
+.status { font-size: 14px; line-height: 1.4; color: var(--text); padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,.06); border: 1px solid var(--stroke); min-height: 42px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.03); }
+.row { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 10px; }
+@media (max-width: 480px) { .wrap { padding: 16px 12px 26px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div class="logo">RG</div>
+    <div>
+      <h1>Settings</h1>
+      <div class="sub">Adjust device defaults and limits</div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="field">
+      <div class="label">Default volume</div>
+      <div class="slider-row">
+        <input type="range" id="defaultVolume" min="0" max="1" step="0.01">
+        <div class="value-pill" id="defaultVolumeValue">--</div>
+      </div>
+    </div>
+    <div class="field">
+      <div class="label">Max volume</div>
+      <div class="slider-row">
+        <input type="range" id="maxVolume" min="0" max="1" step="0.01">
+        <div class="value-pill" id="maxVolumeValue">--</div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row">
+      <div class="field">
+        <div class="label">WiFi SSID</div>
+        <input type="text" id="wifiSSID" placeholder="Network name">
+      </div>
+      <div class="field">
+        <div class="label">WiFi Password</div>
+        <input type="password" id="wifiPassword" placeholder="Password">
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <div class="label">Sleep timeout (minutes)</div>
+        <input type="number" id="sleepTimeout" min="1" max="1440">
+      </div>
+      <div class="field">
+        <div class="label">Battery check interval (minutes)</div>
+        <input type="number" id="batteryCheckInterval" min="1" max="60">
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="label">Status</div>
+    <div class="status" id="status">Loading...</div>
+    <div class="actions">
+      <button class="btn-ghost" id="backBtn">Back</button>
+      <button class="btn-primary" id="saveBtn">Save settings</button>
+    </div>
+  </div>
+</div>
+<script>
+const statusEl=document.getElementById("status");
+const inputs={
+  defaultVolume:document.getElementById("defaultVolume"),
+  maxVolume:document.getElementById("maxVolume"),
+  wifiSSID:document.getElementById("wifiSSID"),
+  wifiPassword:document.getElementById("wifiPassword"),
+  sleepTimeout:document.getElementById("sleepTimeout"),
+  batteryCheckInterval:document.getElementById("batteryCheckInterval")
+};
+const pills={
+  defaultVolume:document.getElementById("defaultVolumeValue"),
+  maxVolume:document.getElementById("maxVolumeValue")
+};
+function setStatus(msg){statusEl.innerText=msg;}
+function clamp(v,min,max){return Math.max(min,Math.min(max,v));}
+function bindSliders(){
+  inputs.defaultVolume.oninput=()=>{
+    const max=parseFloat(inputs.maxVolume.value||1);
+    inputs.defaultVolume.value=clamp(parseFloat(inputs.defaultVolume.value||0),0,max);
+    pills.defaultVolume.innerText=(parseFloat(inputs.defaultVolume.value)*100).toFixed(0)+"%";
+  };
+  inputs.maxVolume.oninput=()=>{
+    inputs.maxVolume.value=clamp(parseFloat(inputs.maxVolume.value||1),0,1);
+    if(parseFloat(inputs.defaultVolume.value)>parseFloat(inputs.maxVolume.value)){
+      inputs.defaultVolume.value=inputs.maxVolume.value;
+    }
+    pills.maxVolume.innerText=(parseFloat(inputs.maxVolume.value)*100).toFixed(0)+"%";
+    pills.defaultVolume.innerText=(parseFloat(inputs.defaultVolume.value)*100).toFixed(0)+"%";
+  };
+}
+async function loadSettings(){
+  setStatus("Loading...");
+  try{
+    const res=await fetch("/api/settings");
+    const data=await res.json();
+    if(data.error){setStatus(data.error);return;}
+    inputs.defaultVolume.value=data.defaultVolume ?? 0.2;
+    inputs.maxVolume.value=data.maxVolume ?? 1.0;
+    inputs.wifiSSID.value=data.wifiSSID || "";
+    inputs.wifiPassword.value=data.wifiPassword || "";
+    inputs.sleepTimeout.value=data.sleepTimeout ?? 15;
+    inputs.batteryCheckInterval.value=data.batteryCheckInterval ?? 1;
+    pills.defaultVolume.innerText=(parseFloat(inputs.defaultVolume.value)*100).toFixed(0)+"%";
+    pills.maxVolume.innerText=(parseFloat(inputs.maxVolume.value)*100).toFixed(0)+"%";
+    setStatus("Ready.");
+  }catch(err){
+    setStatus("Failed to load settings.");
+  }
+}
+async function saveSettings(){
+  setStatus("Saving...");
+  const payload={
+    defaultVolume:parseFloat(inputs.defaultVolume.value||0),
+    maxVolume:parseFloat(inputs.maxVolume.value||1),
+    wifiSSID:inputs.wifiSSID.value||"",
+    wifiPassword:inputs.wifiPassword.value||"",
+    sleepTimeout:parseInt(inputs.sleepTimeout.value||0,10),
+    batteryCheckInterval:parseInt(inputs.batteryCheckInterval.value||0,10)
+  };
+  try{
+    const res=await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    const data=await res.json();
+    if(data.status==="ok"){setStatus("Settings saved.");}
+    else{setStatus(data.error||"Save failed.");}
+  }catch(err){
+    setStatus("Save failed.");
+  }
+}
+document.getElementById("saveBtn").onclick=saveSettings;
+document.getElementById("backBtn").onclick=()=>{window.location.href="/";};
+bindSliders();
+loadSettings();
 </script>
 </body>
 </html>
@@ -170,13 +394,17 @@ WebSetupServer::WebSetupServer()
       contentRoot("/"),
       mappingStore(nullptr),
       sdScanner(nullptr),
-      rfidManager(nullptr) {}
+      rfidManager(nullptr),
+      settingsManager(nullptr),
+      batteryManager(nullptr) {}
 
-bool WebSetupServer::begin(MappingStore* store, SdScanner* scanner, RFID_Manager* rfid, const String& root) {
+bool WebSetupServer::begin(MappingStore* store, SdScanner* scanner, RFID_Manager* rfid, const String& root, Settings_Manager* settings, Battery_Manager* battery) {
     mappingStore = store;
     sdScanner = scanner;
     rfidManager = rfid;
     contentRoot = root;
+    settingsManager = settings;
+    batteryManager = battery;
 
     if (!mappingStore || !sdScanner || !rfidManager) {
         LOG_ERROR("[WEB-SETUP] Invalid components");
@@ -250,6 +478,10 @@ void WebSetupServer::loop() {
 
 void WebSetupServer::registerRoutes() {
     server.on("/", HTTP_GET, [this]() { handleRoot(); });
+    server.on("/settings", HTTP_GET, [this]() { handleSettingsPage(); });
+    server.on("/api/settings", HTTP_GET, [this]() { handleSettingsJson(); });
+    server.on("/api/settings", HTTP_POST, [this]() { handleSettingsSave(); });
+    server.on("/api/battery", HTTP_GET, [this]() { handleBattery(); });
     server.on("/folders", HTTP_GET, [this]() { handleFolders(); });
     server.on("/select", HTTP_POST, [this]() { handleSelect(); });
     server.on("/tag", HTTP_GET, [this]() { handleTag(); });
@@ -264,6 +496,10 @@ void WebSetupServer::sendJson(int statusCode, const String& body) {
 
 void WebSetupServer::handleRoot() {
     server.send_P(200, "text/html", kIndexHtml);
+}
+
+void WebSetupServer::handleSettingsPage() {
+    server.send_P(200, "text/html", kSettingsHtml);
 }
 
 void WebSetupServer::handleFolders() {
@@ -401,6 +637,106 @@ void WebSetupServer::handleReassign() {
 void WebSetupServer::handleDone() {
     sendJson(200, "{\"status\":\"ok\"}");
     stop();
+}
+
+void WebSetupServer::handleBattery() {
+    StaticJsonDocument<128> doc;
+    if (!batteryManager || !batteryManager->isInitialized()) {
+        doc["status"] = "unavailable";
+    } else {
+        doc["status"] = "ok";
+        doc["percentage"] = batteryManager->getBatteryPercentage();
+        doc["voltage"] = batteryManager->getBatteryVoltage();
+    }
+    String body;
+    serializeJson(doc, body);
+    sendJson(200, body);
+}
+
+void WebSetupServer::handleSettingsJson() {
+    StaticJsonDocument<256> doc;
+    if (!settingsManager) {
+        doc["error"] = "Settings unavailable";
+        String body;
+        serializeJson(doc, body);
+        sendJson(500, body);
+        return;
+    }
+
+    const Settings& s = settingsManager->getSettings();
+    doc["defaultVolume"] = s.defaultVolume;
+    doc["maxVolume"] = s.maxVolume;
+    doc["wifiSSID"] = s.wifiSSID;
+    doc["wifiPassword"] = s.wifiPassword;
+    doc["sleepTimeout"] = s.sleepTimeout;
+    doc["batteryCheckInterval"] = s.batteryCheckInterval;
+
+    String body;
+    serializeJson(doc, body);
+    sendJson(200, body);
+}
+
+void WebSetupServer::handleSettingsSave() {
+    StaticJsonDocument<256> errorDoc;
+    if (!settingsManager) {
+        errorDoc["error"] = "Settings unavailable";
+        String body; serializeJson(errorDoc, body);
+        sendJson(500, body);
+        return;
+    }
+
+    StaticJsonDocument<512> doc;
+    DeserializationError err = deserializeJson(doc, server.arg("plain"));
+    if (err) {
+        errorDoc["error"] = "Invalid JSON payload";
+        String body; serializeJson(errorDoc, body);
+        sendJson(400, body);
+        return;
+    }
+
+    Settings next = settingsManager->getSettings();
+    if (doc.containsKey("defaultVolume")) {
+        next.defaultVolume = doc["defaultVolume"];
+    }
+    if (doc.containsKey("maxVolume")) {
+        next.maxVolume = doc["maxVolume"];
+    }
+    if (doc.containsKey("wifiSSID")) {
+        const char* ssid = doc["wifiSSID"] | "";
+        strncpy(next.wifiSSID, ssid, sizeof(next.wifiSSID) - 1);
+        next.wifiSSID[sizeof(next.wifiSSID) - 1] = '\0';
+    }
+    if (doc.containsKey("wifiPassword")) {
+        const char* pwd = doc["wifiPassword"] | "";
+        strncpy(next.wifiPassword, pwd, sizeof(next.wifiPassword) - 1);
+        next.wifiPassword[sizeof(next.wifiPassword) - 1] = '\0';
+    }
+    if (doc.containsKey("sleepTimeout")) {
+        next.sleepTimeout = doc["sleepTimeout"];
+    }
+    if (doc.containsKey("batteryCheckInterval")) {
+        next.batteryCheckInterval = doc["batteryCheckInterval"];
+    }
+
+    settingsManager->updateSettings(next);
+    if (!settingsManager->validateSettings()) {
+        errorDoc["error"] = "Validation failed";
+        String body; serializeJson(errorDoc, body);
+        sendJson(400, body);
+        return;
+    }
+
+    if (!settingsManager->saveSettings()) {
+        errorDoc["error"] = "Save failed";
+        String body; serializeJson(errorDoc, body);
+        sendJson(500, body);
+        return;
+    }
+
+    StaticJsonDocument<64> okDoc;
+    okDoc["status"] = "ok";
+    String body; serializeJson(okDoc, body);
+    sendJson(200, body);
 }
 
 void WebSetupServer::refreshFolders() {
