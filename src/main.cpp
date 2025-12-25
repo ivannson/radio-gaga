@@ -17,10 +17,11 @@
 #include "Audio_Manager.h"
 #include "RFID_Manager.h"
 #include "Battery_Manager.h"
-#include "SetupMode.h"
 #include "SdScanner.h"
 #include "MappingStore.h"
+#include "WebSetupServer.h"
 #include "Logger.h"
+#include <WiFi.h>
 
 // ============================================================================
 // PIN DEFINITIONS
@@ -68,10 +69,13 @@ Settings_Manager settingsManager("/settings.json");  // settings file path
 RFID_Manager rfidManager(SPI_SCLK, SPI_MISO, SPI_MOSI, SPI_SS);  // sclk, miso, mosi, ss
 Battery_Manager batteryManager; // Battery manager instance
 
-// Setup mode components
+// Setup components
 SdScanner sdScanner;
 MappingStore mappingStore;
-SetupMode setupMode;
+WebSetupServer webSetupServer;
+
+// Forward declaration for external triggers (e.g., config button) to start the captive portal
+static void startCaptivePortal();
 
 // ============================================================================
 // AUDIO MANAGER CONFIGURATION
@@ -241,21 +245,25 @@ void handleButtonPress(ButtonType buttonType) {
   LOG_DEBUG("Audio Manager initialized: %s", audioManager.isInitialized() ? "Yes" : "No");
 
   // Only require a tag for transport controls, never for the encoder button
-  auto requiresTag = [](ButtonType b) {
-    return b == BUTTON_PREVIOUS || b == BUTTON_NEXT || b == BUTTON_PLAY_PAUSE;
-  };
+    auto requiresTag = [](ButtonType b) {
+        return b == BUTTON_PREVIOUS || b == BUTTON_NEXT || b == BUTTON_PLAY_PAUSE;
+    };
 
-  const bool tagPresent = rfidManager.isTagPresent();
+    const bool tagPresent = rfidManager.isTagPresent();
+    const bool audioActive = audioManager.isPlaying();
 
-  if (requiresTag(buttonType) && !tagPresent) {
-    LOG_WARN("No RFID tag present - transport buttons disabled");
-    return;
-  }
+    // Allow transport buttons while audio is already playing even if tag briefly drops out
+    if (requiresTag(buttonType) && !tagPresent && !audioActive) {
+        LOG_WARN("No RFID tag present - transport buttons disabled");
+        return;
+    }
 
-  if (tagPresent) {
-    LOG_DEBUG("RFID tag present: %s - buttons enabled",
-              rfidManager.getLastDetectedUIDString().c_str());
-  }
+    if (tagPresent) {
+        LOG_DEBUG("RFID tag present: %s - buttons enabled",
+                            rfidManager.getLastDetectedUIDString().c_str());
+    } else if (audioActive) {
+        LOG_INFO("Tag not detected, but audio is active - allowing transport control");
+    }
 
   switch (buttonType) {
     case BUTTON_PREVIOUS:
@@ -300,9 +308,7 @@ void handleButtonPress(ButtonType buttonType) {
 
     case BUTTON_ENCODER:
       LOG_INFO("Encoder button pressed - (always active)");
-      // Put your always-available action here:
-      // e.g., toggle setup mode, cycle volume mode, etc.
-      setupMode.enter();  // if this is what you want on encoder press/long-press
+      // No action bound; web setup is triggered via long-press in loop
       break;
 
     default:
@@ -370,11 +376,27 @@ void listAllSDContents(const char* path, int depth = 0) {
     root.close();
 }
 
+// Convenience helper to start the captive portal/web setup from other triggers
+static void startCaptivePortal() {
+    if (webSetupServer.isActive()) {
+        LOG_INFO("Captive portal already active");
+        return;
+    }
+    LOG_INFO("Starting captive portal (web setup) on demand");
+    if (!webSetupServer.start()) {
+        LOG_ERROR("Failed to start Web Setup server");
+    }
+}
+
 // ============================================================================
 // MAIN LOOP FUNCTION
 // ============================================================================
 
 void loop() {
+    static bool prevWebSetupActive = false;
+    static uint32_t lastWebSetupStopMs = 0;
+    static bool webSetupJustStopped = false;
+    
     // Update button states
     buttonManager.update();
     
@@ -384,27 +406,38 @@ void loop() {
         rfidManager.update();
         lastRFID = millis();
     }
-    
-    // Always tick setup mode (safe: early-returns unless active)
-    setupMode.loop();
-    
-    // If setup mode is active, skip all normal player logic
-    if (setupMode.isSetupActive()) {
-        return; // Only setup mode runs until it exits
+
+    // If web setup is active, serve HTTP and skip normal player logic
+    const bool webSetupActive = webSetupServer.isActive();
+    if (webSetupActive) {
+        webSetupServer.loop();
+        prevWebSetupActive = true;
+        webSetupJustStopped = false;
+        return;
+    }
+    if (prevWebSetupActive && !webSetupActive) {
+        lastWebSetupStopMs = millis();
+        prevWebSetupActive = false;
+        webSetupJustStopped = true;
+        // Small yield to avoid immediate re-entry on same loop iteration
+        delay(10);
     }
     
     // Enter setup mode on encoder long press release
     if (buttonManager.getButtonState() == BUTTON_RELEASED_LONG &&
         buttonManager.getLastButton() == BUTTON_ENCODER) {
-        LOG_INFO("Encoder long press detected - entering Setup Mode");
-        setupMode.enter(); // Handles disabling RFID control etc.
+        // Prevent immediate re-entry right after stopping via web exit
+        if (webSetupJustStopped || millis() - lastWebSetupStopMs < 2000) {
+            return;
+        }
+        LOG_INFO("Encoder long press detected - starting Web Setup server");
+        if (!webSetupServer.start()) {
+            LOG_ERROR("Failed to start Web Setup server");
+        }
         return; // Skip normal player logic this cycle
     }
+    webSetupJustStopped = false;
 
-      // Handle audio playback first
-    if (audioManager.isInitialized()) {
-        audioManager.update();
-    }
     // check whether to send audio to speaker or headphones
     static uint32_t lastPoll = 0;
 
@@ -462,6 +495,11 @@ void loop() {
     // Update battery monitoring (throttled to prevent interference)
     if (batteryManager.isInitialized()) {
         batteryManager.update(); // This handles the 5-second timing internally
+    }
+
+    // Handle audio playback after controls to keep UI responsive even if copy() runs long
+    if (audioManager.isInitialized()) {
+        audioManager.update();
     }
     
     // Debug: Print status occasionally
@@ -533,10 +571,15 @@ void setup() {
     AudioLogger::instance().begin(Serial, AudioLogger::Warning);
     
     // Initialize logging system
-    initLogger(LogLevel::INFO);  // Set to DEBUG for development, INFO for production
+    initLogger(LogLevel::INFO);  // Set to DEBUG for development, INFO for normal operation
     
     // Reset system
     delay(100);
+
+    // Keep WiFi off until AP setup is explicitly started
+    WiFi.disconnect(true, true);
+    WiFi.mode(WIFI_OFF);
+    LOG_INFO("WiFi disabled at startup; AP will enable WiFi on demand");
 
     // Initialize WLED
     FastLED.addLeds<WS2812B, WLED_PIN, GRB>(leds, NUM_LEDS);
@@ -620,7 +663,7 @@ void setup() {
     }
     LOG_INFO("RFID MFRC522 initialized successfully!");
 
-    // Initialize Setup Mode components
+    // Initialize storage components for mapping
     if (!sdScanner.begin(SD_MMC)) {
         LOG_ERROR("Failed to initialize SD Scanner");
         return;
@@ -631,18 +674,11 @@ void setup() {
         return;
     }
     
-    if (!setupMode.begin(&mappingStore, &sdScanner, &rfidManager, &buttonManager, "/")) {
-        LOG_ERROR("Failed to initialize Setup Mode");
-        return;
-    }
-    LOG_INFO("Setup Mode components initialized successfully!");
-    LOG_INFO("Scan an RFID card to see the UID!");
-    
     // Set up RFID audio control callback
     rfidManager.setAudioControlCallback([](const char* uid, bool tagPresent, bool isNewTag, bool isSameTag) {
-        // Suppress audio control during setup mode
-        if (setupMode.isSetupActive()) {
-            LOG_DEBUG("[RFID-AUDIO] Setup mode active - audio control suppressed");
+        // Suppress audio control during web setup
+        if (webSetupServer.isActive()) {
+            LOG_DEBUG("[RFID-AUDIO] Web setup active - audio control suppressed");
             return;
         }
         
@@ -716,7 +752,7 @@ void setup() {
     // Initialize Audio Manager
     LOG_INFO("Initializing Audio Manager...");
     LOG_INFO("Audio Manager Mode: %s", 
-             (audioManager.getFileSelectionMode() == FileSelectionMode::BUILTIN) ? "BUILTIN" : "CUSTOM");
+             (audioManager.getFileSelectionMode() == FileSelectionMode::CUSTOM) ? "CUSTOM" : "BUILTIN");
     
     if (!audioManager.begin()) {
         LOG_ERROR("Failed to initialize Audio Manager!");
@@ -752,6 +788,12 @@ void setup() {
         FastLED.show();
         while(1) delay(1000);
     }
+
+    // Initialize Web Setup server (open AP, starts on-demand) after settings/battery are ready
+    if (!webSetupServer.begin(&mappingStore, &sdScanner, &rfidManager, "/", &settingsManager, &batteryManager)) {
+        LOG_ERROR("Failed to initialize Web Setup server");
+    }
+    LOG_INFO("Scan an RFID card to see the UID!");
 
     // Determine initial volume from settings (or fallback) and
     // apply it directly to the Audio Manager so it is effective

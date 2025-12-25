@@ -25,8 +25,8 @@ private:
     I2SConfig i2sCfg_;
     
     // Configuration
-    const char* audioFolder;
-    const char* fileExtension;
+    String audioFolder;       // Use String to own the memory (avoid dangling pointers)
+    String fileExtension;     // Use String to own the memory
     float currentVolume;
     bool audioInitialized;
     bool playerActive;
