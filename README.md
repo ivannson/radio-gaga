@@ -64,7 +64,8 @@ I2S Audio Output:
 - DATA: GPIO 32
 
 Headphone Detection:
-- GPIO 33 (with pull-up)
+- MIC (detect): GPIO 33 (with pull-up)
+- OFF (shutdown): GPIO 35 ⚠️ Input-only - needs swap with MIC for auto-off feature
 
 Rotary Encoder:
 - CLK: GPIO 12
@@ -263,7 +264,10 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ### Configuration & Settings
 - [ ] Add logging level configuration to `settings.json`
+
+### Power Management
 - [ ] Implement auto-shutdown timer (configurable via settings.json)
+  - ⚠️ **Hardware limitation**: Cannot be implemented with current pinout. The MIC pin is on GPIO33 and the OFF pin is on GPIO35. Since GPIO35 is input-only, it cannot send the shutdown signal. These pins need to be swapped: MIC detection (input-only) on GPIO35, and OFF signal (output) on GPIO33.
 
 ### Visual Feedback Improvements
 - [ ] Improve/add on to LED feedback system

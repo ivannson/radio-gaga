@@ -571,7 +571,7 @@ void setup() {
     AudioLogger::instance().begin(Serial, AudioLogger::Warning);
     
     // Initialize logging system
-    initLogger(LogLevel::INFO);  // Set to DEBUG for development, INFO for normal operation
+    initLogger(LogLevel::ERROR);  // Set to DEBUG for development, ERROR for production
     
     // Reset system
     delay(100);
@@ -613,10 +613,12 @@ void setup() {
     }
     sdCardMounted = true;
 
-    // DEBUG: List all files and directories on SD card
-    LOG_DEBUG("=== DEBUG: SD CARD CONTENTS ===");
-    listAllSDContents("/");
-    LOG_DEBUG("=== END DEBUG: SD CARD CONTENTS ===");
+    // DEBUG: List all files and directories on SD card (only if log level is DEBUG)
+    if (getLogLevel() >= LogLevel::DEBUG) {
+        LOG_DEBUG("=== DEBUG: SD CARD CONTENTS ===");
+        listAllSDContents("/");
+        LOG_DEBUG("=== END DEBUG: SD CARD CONTENTS ===");
+    }
 
     // Initialize DAC Manager
     LOG_INFO("Initializing DAC Manager...");
