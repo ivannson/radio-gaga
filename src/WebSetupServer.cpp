@@ -71,6 +71,7 @@ button:active { transform: translateY(1px); }
 .btn-primary { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: #001429; box-shadow: 0 10px 20px rgba(10,160,255,.35); }
 .btn-ghost { background: rgba(255,255,255,.1); color: var(--text); border: 1px solid var(--stroke); }
 .btn-link { background: rgba(255,255,255,.04); color: var(--text); border: 1px solid var(--stroke); box-shadow: 0 8px 16px rgba(0,0,0,.12); }
+.btn-danger { background: linear-gradient(135deg, #ff5f6d, #c70039); color: #fff; box-shadow: 0 10px 20px rgba(255,95,109,.35); border: 1px solid rgba(255,255,255,.1); }
 .hidden { display: none; }
 #modal { position: fixed; inset: 0; background: rgba(5,10,24,.7); display: none; align-items: center; justify-content: center; padding: 16px; }
 #modalContent { background: var(--card); border: 1px solid var(--stroke); border-radius: 14px; padding: 16px; max-width: 360px; width: 100%; box-shadow: 0 16px 30px rgba(0,0,0,.35); }
@@ -107,6 +108,7 @@ button:active { transform: translateY(1px); }
     </div>
   </div>
   <button class="btn-link" id="settingsBtn">Settings</button>
+  <button class="btn-danger" id="exitBtn">Exit Web Setup</button>
 </div>
 <div id="modal">
   <div id="modalContent">
@@ -173,6 +175,15 @@ document.getElementById("doneBtn").onclick=async()=>{
   await fetch("/done",{method:"POST"});S("Done. You can close this page.");
 };
 document.getElementById("settingsBtn").onclick=()=>{window.location.href="/settings";};
+document.getElementById("exitBtn").onclick=async()=>{
+  S("Exiting setup...");
+  try{
+    await fetch("/done",{method:"POST"});
+    S("Stopping web setup and WiFi...");
+  }catch(e){
+    S("Stopping web setup...");
+  }
+};
 L();
 B();setInterval(B,10000);
 </script>
@@ -636,6 +647,8 @@ void WebSetupServer::handleReassign() {
 
 void WebSetupServer::handleDone() {
     sendJson(200, "{\"status\":\"ok\"}");
+    // Give the response a brief moment to flush before stopping AP
+    delay(150);
     stop();
 }
 

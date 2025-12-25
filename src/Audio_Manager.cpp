@@ -38,8 +38,8 @@ Audio_Manager::~Audio_Manager() {
 // Initialize audio manager
 bool Audio_Manager::begin() {
     LOG_AUDIO_INFO("Initializing Audio Manager...");
-    LOG_AUDIO_INFO("Audio folder: %s", audioFolder);
-    LOG_AUDIO_INFO("File extension: %s", fileExtension);
+    LOG_AUDIO_INFO("Audio folder: %s", audioFolder.c_str());
+    LOG_AUDIO_INFO("File extension: %s", fileExtension.c_str());
     
     // Initialize I2S
     if (!initializeI2S()) {
@@ -97,15 +97,15 @@ bool Audio_Manager::initializeAudioPipeline() {
     
     try {
         // Create audio source
-        LOG_AUDIO_DEBUG("Creating audio source for folder: %s", 
-                        audioFolder[0] == '\0' ? "root directory" : audioFolder);
+    LOG_AUDIO_DEBUG("Creating audio source for folder: %s", 
+            audioFolder.isEmpty() ? "root directory" : audioFolder.c_str());
         
-        // Handle root directory (empty string)
-        const char* sourcePath = (audioFolder[0] == '\0') ? "/" : audioFolder;
+    // Handle root directory (empty string)
+    const char* sourcePath = audioFolder.isEmpty() ? "/" : audioFolder.c_str();
         
         // Create AudioSourceSDMMC that will scan the entire folder for audio files
         // This will automatically find all files with the specified extension
-        source = new AudioSourceSDMMC(sourcePath, fileExtension);
+    source = new AudioSourceSDMMC(sourcePath, fileExtension.c_str());
         
         LOG_AUDIO_DEBUG("Audio source created for path: %s with extension: %s", sourcePath, fileExtension);
         
@@ -141,10 +141,10 @@ bool Audio_Manager::initializeAudioPipeline() {
 // List audio files in the specified folder
 bool Audio_Manager::listAudioFiles() {
     LOG_AUDIO_DEBUG("=== Listing audio files in %s ===", 
-                    audioFolder[0] == '\0' ? "root directory" : audioFolder);
+                    audioFolder.isEmpty() ? "root directory" : audioFolder.c_str());
     
     // Handle root directory (empty string)
-    const char* folderPath = (audioFolder[0] == '\0') ? "/" : audioFolder;
+    const char* folderPath = audioFolder.isEmpty() ? "/" : audioFolder.c_str();
     
     if (!SD_MMC.exists(folderPath)) {
         LOG_AUDIO_ERROR("Audio folder %s does not exist!", folderPath);
@@ -166,12 +166,12 @@ bool Audio_Manager::listAudioFiles() {
     while (file) {
         if (!file.isDirectory()) {
             String filename = String(file.name());
-            if (filename.endsWith(fileExtension)) {
+            if (filename.endsWith(fileExtension) && !filename.startsWith("._")) {
                 fileCount++;
                 totalAudioFiles++;
                 LOG_AUDIO_DEBUG("%d. %s", fileCount, filename.c_str());
                 
-                // Store first audio file found
+                // Store first audio file found (excluding macOS metadata files)
                 if (firstAudioFile.length() == 0) {
                     firstAudioFile = filename;
                     LOG_AUDIO_DEBUG("First audio file: %s", firstAudioFile.c_str());
@@ -220,8 +220,8 @@ bool Audio_Manager::playFile(const String& filename) {
     
     if (fileSelectionMode == FileSelectionMode::BUILTIN) {
         // BUILTIN mode - use the folder-based approach
-        LOG_AUDIO_DEBUG("Starting playback from folder: %s", 
-                        audioFolder[0] == '\0' ? "root directory" : audioFolder);
+    LOG_AUDIO_DEBUG("Starting playback from folder: %s", 
+            audioFolder.isEmpty() ? "root directory" : audioFolder.c_str());
         
         // Set volume
         volume->setVolume(currentVolume);
@@ -245,7 +245,7 @@ bool Audio_Manager::playFile(const String& filename) {
         // CUSTOM mode - use playPath with full file path
         try {
             // Build full path
-            String fullPath = String(audioFolder) + "/" + filename;
+            String fullPath = audioFolder + "/" + filename;
             LOG_AUDIO_DEBUG("Full path for custom mode: %s", fullPath.c_str());
             
             // Set volume
@@ -696,7 +696,7 @@ void Audio_Manager::setBufferSettings(uint16_t bufferSize, uint8_t bufferCount) 
 
 // Set audio folder
 void Audio_Manager::setAudioFolder(const char* folder) {
-    audioFolder = folder;
+    audioFolder = folder ? String(folder) : String("");
 }
 
 // Set file extension
@@ -740,7 +740,7 @@ void Audio_Manager::printFileList() const {
         return;
     }
     
-    LOG_AUDIO_INFO("=== Audio Files in %s ===", audioFolder);
+    LOG_AUDIO_INFO("=== Audio Files in %s ===", audioFolder.c_str());
     LOG_AUDIO_INFO("Total files: %d", totalAudioFiles);
     if (firstAudioFile.length() > 0) {
         LOG_AUDIO_INFO("First file: %s", firstAudioFile.c_str());
@@ -797,14 +797,14 @@ bool Audio_Manager::buildCustomFileList() {
     }
     
     LOG_AUDIO_DEBUG("Building custom file list...");
-    LOG_AUDIO_DEBUG("Audio folder: %s", audioFolder);
+    LOG_AUDIO_DEBUG("Audio folder: %s", audioFolder.c_str());
     LOG_AUDIO_DEBUG("File extension: %s", fileExtension);
     
     audioFileList.clear();
     currentFileIndex = 0;
     
     // Handle root directory (empty string)
-    const char* folderPath = (audioFolder[0] == '\0') ? "/" : audioFolder;
+    const char* folderPath = audioFolder.isEmpty() ? "/" : audioFolder.c_str();
     LOG_AUDIO_DEBUG("Scanning folder: %s", folderPath);
     
     if (!SD_MMC.exists(folderPath)) {
@@ -827,14 +827,14 @@ bool Audio_Manager::buildCustomFileList() {
     while (file) {
         if (!file.isDirectory()) {
             String filename = String(file.name());
-            LOG_AUDIO_DEBUG("Found file: %s (starts with '_': %s, ends with %s: %s)", 
+            LOG_AUDIO_DEBUG("Found file: %s (starts with '._': %s, ends with %s: %s)", 
                             filename.c_str(), 
-                            filename.startsWith("_") ? "yes" : "no",
+                            filename.startsWith("._") ? "yes" : "no",
                             fileExtension,
                             filename.endsWith(fileExtension) ? "yes" : "no");
             
-            // Only include .mp3 files that don't start with "_"
-            if (filename.endsWith(fileExtension) && !filename.startsWith("_")) {
+            // Only include .mp3 files that don't start with "._" (macOS metadata files)
+            if (filename.endsWith(fileExtension) && !filename.startsWith("._")) {
                 audioFileList.push_back(filename);
                 fileCount++;
                 LOG_AUDIO_DEBUG("Added to custom list: %s", filename.c_str());
@@ -878,7 +878,7 @@ bool Audio_Manager::playFileByIndex(int index) {
     
     try {
         // Build full path
-        String fullPath = String(audioFolder) + "/" + filename;
+    String fullPath = audioFolder + "/" + filename;
         LOG_AUDIO_DEBUG("Full path: %s", fullPath.c_str());
         
         // Use playPath for custom mode
@@ -919,10 +919,10 @@ bool Audio_Manager::changeAudioSource(const char* newFolder) {
         return false;
     }
     
-    LOG_AUDIO_INFO("Changing audio source from '%s' to '%s'", audioFolder, newFolder);
+    LOG_AUDIO_INFO("Changing audio source from '%s' to '%s'", audioFolder.c_str(), newFolder ? newFolder : "(null)");
     
     // Check if we're already using this folder
-    if (strcmp(audioFolder, newFolder) == 0) {
+    if (newFolder && strcmp(audioFolder.c_str(), newFolder) == 0) {
         LOG_AUDIO_DEBUG("Already using this audio source, no change needed");
         return true;
     }
@@ -932,7 +932,7 @@ bool Audio_Manager::changeAudioSource(const char* newFolder) {
     delay(100); // Give time for cleanup
     
     // Update the audio folder
-    audioFolder = newFolder;
+    audioFolder = newFolder ? String(newFolder) : String("");
     
     // Clear existing file information
     firstAudioFile = "";
@@ -951,11 +951,11 @@ bool Audio_Manager::changeAudioSource(const char* newFolder) {
     }
     
     // Handle root directory (empty string)
-    const char* sourcePath = (audioFolder[0] == '\0') ? "/" : audioFolder;
+    const char* sourcePath = audioFolder.isEmpty() ? "/" : audioFolder.c_str();
     
     try {
         // Create new AudioSourceSDMMC
-        source = new AudioSourceSDMMC(sourcePath, fileExtension);
+        source = new AudioSourceSDMMC(sourcePath, fileExtension.c_str());
         if (!source) {
             setLastError("Failed to create new audio source");
             return false;
@@ -983,7 +983,7 @@ bool Audio_Manager::changeAudioSource(const char* newFolder) {
             return false;
         }
         
-        LOG_AUDIO_INFO("Audio source changed successfully to: %s", audioFolder);
+        LOG_AUDIO_INFO("Audio source changed successfully to: %s", audioFolder.c_str());
         return true;
         
     } catch (const std::exception& e) {

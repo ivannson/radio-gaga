@@ -21,6 +21,7 @@
 #include "MappingStore.h"
 #include "WebSetupServer.h"
 #include "Logger.h"
+#include <WiFi.h>
 
 // ============================================================================
 // PIN DEFINITIONS
@@ -72,6 +73,9 @@ Battery_Manager batteryManager; // Battery manager instance
 SdScanner sdScanner;
 MappingStore mappingStore;
 WebSetupServer webSetupServer;
+
+// Forward declaration for external triggers (e.g., config button) to start the captive portal
+static void startCaptivePortal();
 
 // ============================================================================
 // AUDIO MANAGER CONFIGURATION
@@ -241,21 +245,25 @@ void handleButtonPress(ButtonType buttonType) {
   LOG_DEBUG("Audio Manager initialized: %s", audioManager.isInitialized() ? "Yes" : "No");
 
   // Only require a tag for transport controls, never for the encoder button
-  auto requiresTag = [](ButtonType b) {
-    return b == BUTTON_PREVIOUS || b == BUTTON_NEXT || b == BUTTON_PLAY_PAUSE;
-  };
+    auto requiresTag = [](ButtonType b) {
+        return b == BUTTON_PREVIOUS || b == BUTTON_NEXT || b == BUTTON_PLAY_PAUSE;
+    };
 
-  const bool tagPresent = rfidManager.isTagPresent();
+    const bool tagPresent = rfidManager.isTagPresent();
+    const bool audioActive = audioManager.isPlaying();
 
-  if (requiresTag(buttonType) && !tagPresent) {
-    LOG_WARN("No RFID tag present - transport buttons disabled");
-    return;
-  }
+    // Allow transport buttons while audio is already playing even if tag briefly drops out
+    if (requiresTag(buttonType) && !tagPresent && !audioActive) {
+        LOG_WARN("No RFID tag present - transport buttons disabled");
+        return;
+    }
 
-  if (tagPresent) {
-    LOG_DEBUG("RFID tag present: %s - buttons enabled",
-              rfidManager.getLastDetectedUIDString().c_str());
-  }
+    if (tagPresent) {
+        LOG_DEBUG("RFID tag present: %s - buttons enabled",
+                            rfidManager.getLastDetectedUIDString().c_str());
+    } else if (audioActive) {
+        LOG_INFO("Tag not detected, but audio is active - allowing transport control");
+    }
 
   switch (buttonType) {
     case BUTTON_PREVIOUS:
@@ -368,11 +376,27 @@ void listAllSDContents(const char* path, int depth = 0) {
     root.close();
 }
 
+// Convenience helper to start the captive portal/web setup from other triggers
+static void startCaptivePortal() {
+    if (webSetupServer.isActive()) {
+        LOG_INFO("Captive portal already active");
+        return;
+    }
+    LOG_INFO("Starting captive portal (web setup) on demand");
+    if (!webSetupServer.start()) {
+        LOG_ERROR("Failed to start Web Setup server");
+    }
+}
+
 // ============================================================================
 // MAIN LOOP FUNCTION
 // ============================================================================
 
 void loop() {
+    static bool prevWebSetupActive = false;
+    static uint32_t lastWebSetupStopMs = 0;
+    static bool webSetupJustStopped = false;
+    
     // Update button states
     buttonManager.update();
     
@@ -384,25 +408,36 @@ void loop() {
     }
 
     // If web setup is active, serve HTTP and skip normal player logic
-    if (webSetupServer.isActive()) {
+    const bool webSetupActive = webSetupServer.isActive();
+    if (webSetupActive) {
         webSetupServer.loop();
+        prevWebSetupActive = true;
+        webSetupJustStopped = false;
         return;
+    }
+    if (prevWebSetupActive && !webSetupActive) {
+        lastWebSetupStopMs = millis();
+        prevWebSetupActive = false;
+        webSetupJustStopped = true;
+        // Small yield to avoid immediate re-entry on same loop iteration
+        delay(10);
     }
     
     // Enter setup mode on encoder long press release
     if (buttonManager.getButtonState() == BUTTON_RELEASED_LONG &&
         buttonManager.getLastButton() == BUTTON_ENCODER) {
+        // Prevent immediate re-entry right after stopping via web exit
+        if (webSetupJustStopped || millis() - lastWebSetupStopMs < 2000) {
+            return;
+        }
         LOG_INFO("Encoder long press detected - starting Web Setup server");
         if (!webSetupServer.start()) {
             LOG_ERROR("Failed to start Web Setup server");
         }
         return; // Skip normal player logic this cycle
     }
+    webSetupJustStopped = false;
 
-      // Handle audio playback first
-    if (audioManager.isInitialized()) {
-        audioManager.update();
-    }
     // check whether to send audio to speaker or headphones
     static uint32_t lastPoll = 0;
 
@@ -460,6 +495,11 @@ void loop() {
     // Update battery monitoring (throttled to prevent interference)
     if (batteryManager.isInitialized()) {
         batteryManager.update(); // This handles the 5-second timing internally
+    }
+
+    // Handle audio playback after controls to keep UI responsive even if copy() runs long
+    if (audioManager.isInitialized()) {
+        audioManager.update();
     }
     
     // Debug: Print status occasionally
@@ -531,10 +571,15 @@ void setup() {
     AudioLogger::instance().begin(Serial, AudioLogger::Warning);
     
     // Initialize logging system
-    initLogger(LogLevel::INFO);  // Set to DEBUG for development, INFO for production
+    initLogger(LogLevel::INFO);  // Set to DEBUG for development, INFO for normal operation
     
     // Reset system
     delay(100);
+
+    // Keep WiFi off until AP setup is explicitly started
+    WiFi.disconnect(true, true);
+    WiFi.mode(WIFI_OFF);
+    LOG_INFO("WiFi disabled at startup; AP will enable WiFi on demand");
 
     // Initialize WLED
     FastLED.addLeds<WS2812B, WLED_PIN, GRB>(leds, NUM_LEDS);
@@ -707,7 +752,7 @@ void setup() {
     // Initialize Audio Manager
     LOG_INFO("Initializing Audio Manager...");
     LOG_INFO("Audio Manager Mode: %s", 
-             (audioManager.getFileSelectionMode() == FileSelectionMode::BUILTIN) ? "BUILTIN" : "CUSTOM");
+             (audioManager.getFileSelectionMode() == FileSelectionMode::CUSTOM) ? "CUSTOM" : "BUILTIN");
     
     if (!audioManager.begin()) {
         LOG_ERROR("Failed to initialize Audio Manager!");
